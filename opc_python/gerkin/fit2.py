@@ -2,9 +2,9 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
 from sklearn.cross_validation import ShuffleSplit,cross_val_score
 
-from olf_pred import * # Import constants.  
-from olf_pred.utils import scoring
-from olf_pred.gerkin import dream
+from opc_python import * # Import constants.  
+from opc_python.utils import scoring
+from opc_python.gerkin import dream
 
 # Use random forest regression to fit the entire training data set, one descriptor set at a time.  
 def rfc_final(X,Y_imp,Y_mask,
