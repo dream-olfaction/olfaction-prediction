@@ -3,9 +3,9 @@ import os, csv, ast, time
 import numpy as np
 
 from . import scoring
-import olf_pred
-from olf_pred import * # Import constants.  
-ROOT_PATH = os.path.split(olf_pred.__path__[0])[0]
+import opc_python
+from opc_python import * # Import constants.  
+ROOT_PATH = os.path.split(opc_python.__path__[0])[0]
 DATA_PATH = os.path.join(ROOT_PATH,'data')
 PREDICTION_PATH = os.path.join(ROOT_PATH,'predictions')
 

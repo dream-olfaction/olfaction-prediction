@@ -3,7 +3,8 @@ from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
 from sklearn.cross_validation import ShuffleSplit,cross_val_score
 from sklearn.linear_model import Lasso
 
-from olf_pred.utils import scoring
+from opc_python import * # Import constants.  
+from opc_python.utils import scoring
 
 def rfc_final(X,Y,
               max_features,min_samples_leaf,max_depth,et,

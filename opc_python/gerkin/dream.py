@@ -3,8 +3,8 @@ import types
 from collections import OrderedDict
 from sklearn.preprocessing import Imputer
 
-from olf_pred import * # Import constants.  
-from olf_pred.utils import loading
+from opc_python import * # Import constants.  
+from opc_python.utils import loading
 
 #############################
 # Perceptual processing (Y) #
