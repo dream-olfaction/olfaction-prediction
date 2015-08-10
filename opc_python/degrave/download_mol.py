@@ -47,17 +47,3 @@ def download_all_mol():
 
 # download_all_mol()
 
-class Mol:
-  def __init__(self):
-    pass
-  
-  def __iter__(self):
-    self.CID_iter = get_all_CIDs().__iter__()
-    return self
-
-  def __next__(self):
-    cid = self.CID_iter.next()
-    file_name = mol_path + 'mol' + str(cid) + '.sdf'
-    with open(file_name, 'r') as SDfile:
-      content = SFfile.read()
-    return content
