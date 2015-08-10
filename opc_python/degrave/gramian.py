@@ -23,3 +23,13 @@ iter_graphs = obabel_to_eden(iter_mols)
 
 vectorizer = Vectorizer( r=3, d=4 )
 X = vectorizer.transform( iter_graphs )
+
+# %matplotlib inline
+from sklearn import metrics
+K=metrics.pairwise.pairwise_kernels(X, metric='linear')
+print K
+
+import pylab as plt
+plt.figure( figsize=(8,8) )
+img = plt.imshow( K, interpolation='none', cmap=plt.get_cmap( 'YlOrRd' ) )
+plt.show()
