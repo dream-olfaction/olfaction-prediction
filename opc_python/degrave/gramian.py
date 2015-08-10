@@ -7,29 +7,49 @@
 import sys, os
 import numpy as np
 
-import eden
-from eden.graph import Vectorizer
-from eden.converter.molecule.obabel import mol_file_to_iterable, obabel_to_eden
-
 curr_path = os.getcwd()
 olfaction_prediction_path = os.path.split(os.path.split(curr_path)[0])[0]
 sys.path.append(olfaction_prediction_path)
 import opc_python
 
-mol_path = olfaction_prediction_path + '/data/sdf/'
+def compute_NSPDK_features():
+  import eden
+  from eden.graph import Vectorizer
+  from eden.converter.molecule.obabel import mol_file_to_iterable, obabel_to_eden
+  mol_path = olfaction_prediction_path + '/data/sdf/'
+  iter_mols = mol_file_to_iterable(mol_path + '/all_mol.sdf', 'sdf')
+  iter_graphs = obabel_to_eden(iter_mols)
 
-iter_mols = mol_file_to_iterable(mol_path + '/all_mol.sdf', 'sdf')
-iter_graphs = obabel_to_eden(iter_mols)
+  vectorizer = Vectorizer( r=3, d=4 )
+  X = vectorizer.transform( iter_graphs )
+  return X
 
-vectorizer = Vectorizer( r=3, d=4 )
-X = vectorizer.transform( iter_graphs )
+def gramian(features):
+  from sklearn import metrics
+  K=metrics.pairwise.pairwise_kernels(X, metric='linear')
+  return K
 
-# %matplotlib inline
-from sklearn import metrics
-K=metrics.pairwise.pairwise_kernels(X, metric='linear')
-print K
+def plot_square_matrix_heatmap(matrix):
+  # %matplotlib inline
+  import pylab as plt
+  plt.figure( figsize=(15,15) )
+  img = plt.imshow( matrix, interpolation='none', cmap=plt.get_cmap( 'YlOrRd' ) )
+  plt.show()
 
-import pylab as plt
-plt.figure( figsize=(8,8) )
-img = plt.imshow( K, interpolation='none', cmap=plt.get_cmap( 'YlOrRd' ) )
-plt.show()
+def write_to_file(X,K):
+  from scipy import io
+  from sklearn.datasets.svmlight_format import dump_svmlight_file
+  dd_path = olfaction_prediction_path + '/data/derived/'
+  if not os.path.isdir(dd_path):
+    os.mkdir(dd_path)
+  kernel_file_base = dd_path + 'gramian_nspdk_r3_d4_unaug'
+  np.savetxt(kernel_file_base + '.mtx.gz', K)
+  # Write features in standard libSVM format:
+  dump_svmlight_file(X,np.zeros(X.shape[0]),kernel_file_base + '.svm')
+  # Alternatively, write one element per line:
+  #io.mmwrite(kernel_file_base + '.features', X)
+
+X = compute_NSPDK_features()
+K = gramian(X)
+plot_square_matrix_heatmap(K)
+write_to_file(X,K)
