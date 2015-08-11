@@ -42,12 +42,11 @@ def write_to_file(X,K):
   dd_path = olfaction_prediction_path + '/data/derived/'
   if not os.path.isdir(dd_path):
     os.mkdir(dd_path)
-  kernel_file_base = dd_path + 'gramian_nspdk_r3_d4_unaug'
-  np.savetxt(kernel_file_base + '.mtx.gz', K)
+  np.savetxt(dd_path + 'nspdk_r3_d4_unaug_gramian.mtx.gz', K)
   # Write features in standard libSVM format:
-  dump_svmlight_file(X,np.zeros(X.shape[0]),kernel_file_base + '.svm')
+  dump_svmlight_file(X,np.zeros(X.shape[0]),dd_path + 'nspdk_r3_d4_unaug.svm')
   # Alternatively, write one element per line:
-  #io.mmwrite(kernel_file_base + '.features', X)
+  #io.mmwrite(dd_path + 'nspdk.features', X)
 
 X = compute_NSPDK_features()
 K = gramian(X)
