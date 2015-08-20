@@ -1,12 +1,20 @@
+import os
+import sys
+
 import numpy as np
 from scipy.stats import pearsonr
 from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
 from sklearn.cross_validation import ShuffleSplit,cross_val_score
 from sklearn.grid_search import GridSearchCV
 
+gerkin_path = os.path.dirname(os.path.abspath(__file__))
+opc_python_path  = os.path.dirname(gerkin_path)
+root_path = os.path.dirname(opc_python_path)
+sys.path.append(root_path)
+
 import dream
-import loading
-import scoring
+from opc_python.utils import loading
+from opc_python.utils import scoring
 
 # Load the perceptual descriptors data.  
 perceptual_headers, perceptual_obs_data = loading.load_perceptual_data('training')
