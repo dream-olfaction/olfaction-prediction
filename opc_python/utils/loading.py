@@ -1,11 +1,13 @@
-import os, csv, ast, time
+import os, sys, csv, ast, time, json
 
 import numpy as np
 
-from . import scoring
+from __init__ import *
 import opc_python
 from opc_python import * # Import constants.  
 ROOT_PATH = os.path.split(opc_python.__path__[0])[0]
+from opc_python.utils import scoring,search
+
 DATA_PATH = os.path.join(ROOT_PATH,'data')
 PREDICTION_PATH = os.path.join(ROOT_PATH,'predictions')
 
@@ -366,3 +368,36 @@ def make_prediction_files(rfcs,X_int,X_other,target,subchallenge,Y_test=None,wri
         print('Wrote to file with suffix "%s"' % name)
     return Y
 
+def load_eva_data(save_formatted=False):
+    eva_file_path = os.path.join(DATA_PATH,'eva_100_training_data.json')
+    with open(eva_file_path) as f:
+        eva_json = json.load(f)
+
+    smile_cids = {}
+    for smile in eva_json.keys():
+        smile_cids[smile] = search.smile2cid(smile)
+
+    cid_smiles = {cid:smile for smile,cid in smile_cids.items()}
+    eva_cids = list(smile_cids.values())
+    available_cids = []
+    eva_data = []
+    for kind in ('training','leaderboard','testset'):
+        dream_cids = get_CIDs(kind)
+    print('Out of %d CIDs from the %s data, we have EVA data for %d of them.' \
+        % (len(dream_cids),kind,len(set(dream_cids).intersection(eva_cids))))
+    for cid in dream_cids:
+        if cid in cid_smiles:
+            available_cids.append(cid)
+
+    available_cids = sorted(available_cids)
+    for cid in available_cids:
+        smile = cid_smiles[cid]
+        eva_data.append(eva_json[smile])
+
+    if save_formatted:
+        np.savetxt(os.path.join(DATA_PATH,'derived','eva_cids.dat'),
+                   available_cids)
+        np.savetxt(os.path.join(DATA_PATH,'derived','eva_descriptors.dat'),
+                   eva_data)
+
+    return (available_cids,eva_data)
