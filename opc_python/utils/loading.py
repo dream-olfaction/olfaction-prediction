@@ -383,8 +383,8 @@ def load_eva_data(save_formatted=False):
     eva_data = []
     for kind in ('training','leaderboard','testset'):
         dream_cids = get_CIDs(kind)
-    print('Out of %d CIDs from the %s data, we have EVA data for %d of them.' \
-        % (len(dream_cids),kind,len(set(dream_cids).intersection(eva_cids))))
+        print('Out of %d CIDs from the %s data, we have EVA data for %d of them.' \
+            % (len(dream_cids),kind,len(set(dream_cids).intersection(eva_cids))))
     for cid in dream_cids:
         if cid in cid_smiles:
             available_cids.append(cid)
