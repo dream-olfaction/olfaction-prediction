@@ -5,19 +5,24 @@ This project is structured as:
 
 * `data/` (Where the data files go)
 
-    Until release of the paper, we cannot put the training data files in this repository.  So please do not commit them here if you have them.  Instead, obtain the data files through Synapse, and place them locally in the corresponding 'data' directoryof this repository.  The files to put here are:
+    Until release of the paper, we cannot put the training data files in this repository.  So please do not commit them here if you have them.  Instead, obtain the data files through Synapse, and place them locally in the corresponding 'data' directory of this repository.  The files already here with permission are:
 
         CID_testset.txt
         CID_leaderboard.txt
-        molecular_descriptors_data.txt
-        TrainSet.txt
-        leaderboard_set.txt
         dilution_testset.txt
         dilution_leaderboard.txt
+        molecular_descriptors_data.txt
+
+    The files *NOT* to commit here contain perceptual descriptor data from the challenge.  They should be download from Synapse and stored only locally.  These include:
+
+        TrainSet.txt
+        leaderboard_set.txt
         LBs1.txt
         LBs2.txt
 
     You may put more other files in this directory as well, and commit those other files, as long as they are not derivative from the files above or anything else related to the original dataset.  
+
+  ** `derived/` (Data derived from raw data or from other available sources; should be the result of code executed against data stored in `data` or elsewhere online.  
 
 * `predictions/` (Where prediction files should be written)
 
