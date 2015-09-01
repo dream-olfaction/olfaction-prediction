@@ -1,0 +1,32 @@
+Overview of DREAM olfaction features
+
+1. Original features
+
+- features as provided in the challenge
+- 4869 features
+
+2. Features added by Rick Gerkin
+
+- imputed, cube-root transformed, centered and normalized version of the original features plus some extra columns
+- last two features are concentration-dependent
+- 3033 features
+
+3. Features added by Russ Wolfinger and Gabor Turu
+
+- similarity scores based on Morgan fingerprints between challenge molecules and 2000 other odor molecules
+- 2437 features
+
+4. Features added by Kurt De Grave
+
+- similarity scores based on NSPDK fingerprints between challenge molecules
+- 476 features
+
+5. Features added by Yuanfang Guan
+
+- n-gram features on the molecule names
+- 11786 features
+
+6. Features added by Joel Mainland
+
+- from Episuite (corresponds to receptors related to olfaction)
+- 64 features
