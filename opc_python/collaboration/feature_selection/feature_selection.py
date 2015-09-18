@@ -12,10 +12,10 @@ from sklearn.linear_model import RandomizedLasso
 import sys
 
 # replace messing values with 0 (Gabor's approach)
-descriptors =pd.read_csv('all_features.csv', sep=',')
+descriptors =pd.read_csv('all_features_training.csv', sep=',')
 descriptors.set_index('CID', inplace=True)
 descriptors.fillna(value=0,inplace=True)
-descriptors.to_csv('all_features_filledna.csv')
+descriptors.to_csv('all_features_training_filledna.csv')
 
 # pair descriptors with numbers
 attribute = {}
@@ -28,7 +28,7 @@ for idx, attr in enumerate([u'INTENSITY/STRENGTH', u'VALENCE/PLEASANTNESS', u'BA
 
 
 # select the best features with true values and save them
-features = pd.read_csv('all_features_filledna.csv',index_col=0).sort()
+features = pd.read_csv('all_features_training_filledna.csv',index_col=0).sort()
 # targets_for_feature_selection.csv can be computed in opc_python/hulab/feature_selection
 target = pd.read_csv('targets_for_feature_selection.csv',index_col=0).sort()#replace this with targets_for_feature_selection_LB_incl.csv if LB data is included
 for i in range(21):
