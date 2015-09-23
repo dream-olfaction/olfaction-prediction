@@ -53,4 +53,9 @@ def download_all_mol():
         outfile.write(sdfStr)
         accumulator_file.write(sdfStr)
 
+with open(os.path.join(olfaction_prediction_path, 'data', 'derived', 'nspdk_cid.csv'), 'w') as outfile:
+  for cid in get_all_CIDs():
+    outfile.write(str(cid)+'\n')
+
 download_all_mol()
+    

@@ -19,7 +19,9 @@ Overview of DREAM olfaction features
 4. Features added by Kurt De Grave
 
 - similarity scores based on NSPDK fingerprints between challenge molecules
-- 476 features
+- 476 similarities
+- when including the similarity with the odor molecules: 2437 similarities
+- also available as sparse feature vectors (the similarities are the scalar products of the feature vectors)
 
 5. Features added by Yuanfang Guan
 
