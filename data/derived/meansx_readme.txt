@@ -1,6 +1,6 @@
-Readme for meansx.csv, DREAM Olfaction data
+Readme for meansx_train.csv, meansx_lb.csv, meansx_test.csv derived from DREAM Olfaction data
 
-The file contains two rows for each molecule, corresponding to two different measured dilutions.  The prediction
+Each file contains two rows for each molecule, corresponding to two different measured dilutions.  The prediction
 features are duplicated for each pair of rows.
 
 Columns:
