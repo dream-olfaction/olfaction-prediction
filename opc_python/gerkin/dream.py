@@ -10,11 +10,11 @@ from opc_python.utils import loading
 # Perceptual processing (Y) #
 #############################
 
-def make_Y_obs(kinds, target_dilution=None, imputer=None):
+def make_Y_obs(kinds, target_dilution=None, imputer=None, quiet=False):
     if target_dilution == 'gold':
         # For actual testing, use 1/1000 dilution for intensity and
         # high dilution for everything else.  
-        Y,imputer = make_Y_obs(kinds,target_dilution='high',imputer=imputer)
+        Y,imputer = make_Y_obs(kinds,target_dilution='high',imputer=imputer,quiet=True)
         intensity,imputer = make_Y_obs(kinds,target_dilution=-3,imputer=imputer)
         Y['mean_std'][:,0] = intensity['mean_std'][:,0]
         Y['mean_std'][:,21] = intensity['mean_std'][:,21]
@@ -32,10 +32,10 @@ def make_Y_obs(kinds, target_dilution=None, imputer=None):
         if kind == 'leaderboard':
             loading.format_leaderboard_perceptual_data()
         _, perceptual_data = loading.load_perceptual_data(kind)
-        print("Getting basic perceptual data...")
+        #print("Getting basic perceptual data...")
         matrices = get_perceptual_matrices(perceptual_data,
                                             target_dilution=target_dilution)
-        print("Flattening into vectors...")
+        #print("Flattening into vectors...")
         v_mean = get_perceptual_vectors(matrices, imputer=imputer, 
                                         statistic='mean', 
                                         target_dilution=target_dilution)
@@ -45,10 +45,10 @@ def make_Y_obs(kinds, target_dilution=None, imputer=None):
         v_subject = get_perceptual_vectors(matrices, imputer=imputer, 
                                            statistic=None, 
                                            target_dilution=target_dilution)
-        print("Assembling into matrices...")
+        #print("Assembling into matrices...")
         Y[kind] = build_Y_obs(v_mean,v_std,v_subject)
 
-    print("Combining Y matrices...")
+    #print("Combining Y matrices...")
     Y_ = {'subject':{}}
     Y_['mean_std'] = np.vstack([Y[kind]['mean_std'] for kind in 
                                 ['training','leaderboard','testset'] \
@@ -57,11 +57,12 @@ def make_Y_obs(kinds, target_dilution=None, imputer=None):
         Y_['subject'][subject] = np.ma.vstack([Y[kind]['subject'][subject] for kind in 
                                 ['training','leaderboard','testset'] \
                                 if kind in kinds])
-    print("The Y['mean_std'] matrix now has shape (%dx%d) " % Y_['mean_std'].shape +\
-          "molecules by 2 x perceptual descriptors")
-    print("The Y['subject'] dict now has %d matrices of shape (%dx%d) " % \
-          (len(Y_['subject']),Y_['subject'][1].shape[0],Y_['subject'][1].shape[1]) +\
-          "molecules by perceptual descriptors, one for each subject")
+    if not quiet:
+        print("The Y['mean_std'] matrix now has shape (%dx%d) " % Y_['mean_std'].shape +\
+              "molecules by 2 x perceptual descriptors")
+        print("The Y['subject'] dict now has %d matrices of shape (%dx%d) " % \
+              (len(Y_['subject']),Y_['subject'][1].shape[0],Y_['subject'][1].shape[1]) +\
+              "molecules by perceptual descriptors, one for each subject")
     return Y_,imputer
 
 def get_perceptual_matrices(perceptual_data,target_dilution=None,use_replicates=True):
@@ -143,10 +144,10 @@ def build_Y_obs(mean_vectors,std_vectors,subject_vectors):
     for subject in range(1,50):
         Y['subject'][subject] = np.ma.vstack([subject_vectors[CID][subject]
                                                for CID in sorted(subject_vectors,key=lambda x:[int(_) for _ in x.split('_')])])
-    print("Y_obs['subject'] contains %d matrices each with shape (%dx%d) (molecules by perceptual descriptors)" \
-      % (len(Y['subject']),Y['subject'][1].shape[0],Y['subject'][1].shape[1]))
+    #print("Y_obs['subject'] contains %d matrices each with shape (%dx%d) (molecules by perceptual descriptors)" \
+    #  % (len(Y['subject']),Y['subject'][1].shape[0],Y['subject'][1].shape[1]))
     Y['mean_std'] = np.hstack((mean,std))
-    print("The Y_obs['mean_std'] matrix has shape (%dx%d) (molecules by 2 x perceptual descriptors)" % Y['mean_std'].shape)
+    #print("The Y_obs['mean_std'] matrix has shape (%dx%d) (molecules by 2 x perceptual descriptors)" % Y['mean_std'].shape)
     return Y
 
 def nan_summary(perceptual_obs_matrices):
@@ -223,8 +224,8 @@ def add_dilutions(molecular_vectors,CID_dilutions,dilution=None):
                 raise ValueError("High not 0 or 1")
             molecular_vectors_[CID_dilution] = np.concatenate((molecular_vectors[CID],[dilution,mean_dilution]))
         molecular_vectors = molecular_vectors_
-        print('There are now %d molecular vectors of length %d, one for each molecule and dilution' \
-            % (len(molecular_vectors),len(molecular_vectors[CID_dilution])))
+        #print('There are now %d molecular vectors of length %d, one for each molecule and dilution' \
+        #    % (len(molecular_vectors),len(molecular_vectors[CID_dilution])))
     return molecular_vectors
 
 # Build the X_obs matrix out of molecular descriptors.  

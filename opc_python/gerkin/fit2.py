@@ -3,7 +3,7 @@ from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
 from sklearn.cross_validation import ShuffleSplit,cross_val_score
 
 from opc_python import * # Import constants.  
-from opc_python.utils import scoring
+from opc_python.utils import scoring,prog
 from opc_python.gerkin import dream
 
 # Use random forest regression to fit the entire training data set, one descriptor set at a time.  
@@ -29,7 +29,7 @@ def rfc_final(X,Y_imp,Y_mask,
         
     rfcs = {}
     for col in range(42):
-        print(col)
+        prog(col,42)
         rfcs[col] = rfc_maker(n_estimators=n_estimators,
                                 max_features=max_features[col],
                                 min_samples_leaf=min_samples_leaf[col],

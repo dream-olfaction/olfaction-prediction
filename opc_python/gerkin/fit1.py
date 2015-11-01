@@ -4,7 +4,7 @@ from sklearn.cross_validation import ShuffleSplit,cross_val_score
 from sklearn.linear_model import Lasso
 
 from opc_python import * # Import constants.  
-from opc_python.utils import scoring
+from opc_python.utils import prog,scoring
 
 def rfc_final(X,Y,
               max_features,min_samples_leaf,max_depth,use_et,
@@ -35,9 +35,8 @@ def rfc_final(X,Y,
                                 use_et=use_et[col])
 
     for subject in range(1,50):
-        print(subject)
+        prog(subject,50)
         from time import gmtime, strftime
-        print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))
         for col in range(21):
             rfcs[col][subject].fit(X,Y[subject][:,col])
     
