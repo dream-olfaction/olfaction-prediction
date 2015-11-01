@@ -300,64 +300,59 @@ def write_prediction_files(Y,kind,subchallenge,name):
                 writer.writerow([CID,descriptor,value,sigma])
         f.close()
 
-def make_prediction_files(rfcs,X_int,X_other,target,subchallenge,Y_test=None,write=True,trans_weight=[1.0,0,0.5],regularize=[0.7,0.7,0.7],name=None):
+def make_prediction_files(rfcs,X_int,X_other,target,subchallenge,Y_test=None,
+                          write=True,trans_weight=np.zeros(21),
+                          trans_params=np.ones((21,2)),regularize=[0.8],name=None):
     if len(regularize)==1 and type(regularize)==list:
-        regularize = regularize*3
+        regularize = regularize*21
     if name is None:
         name = '%d' % time.time()
 
     Y = {'subject':{}}
     
     if subchallenge == 1:
-        kinds = ['int','ple','dec']
-        ys = {kind:{} for kind in kinds}
-        for i,kind in enumerate(kinds):
-            X = X_int if kind=='int' else X_other
+        y0 = rfcs[0][1].predict(X_int)
+        ys = np.zeros((y0.shape[0],21,49))
+        for col in range(21):
+            X = X_int if col==0 else X_other
             for subject in range(1,50):
-                ys[kind][subject] = rfcs[kind][subject].predict(X)
-            ys_list = [ys[kind][subject] for subject in range(1,50)]
-            ys[kind] = np.dstack(ys_list)
-            ys_kind_mean = ys[kind].mean(axis=2,keepdims=True)
-            ys[kind] = regularize[i]*ys_kind_mean + (1-regularize[i])*ys[kind]
+                ys[:,col,subject-1] = rfcs[col][subject].predict(X)
+        
+        # Regularize
+        ys_mean = ys.mean(axis=2,keepdims=True)
+        ys_reg = ys.copy()
+        for col in range(21):
+            ys_reg[:,col,:] = regularize[col]*ys_mean[:,col,:] + (1-regularize[col])*ys[:,col,:]
+        ys = ys_reg
+
         for subject in range(1,50):
-            Y['subject'][subject] = ys['int'][:,:,subject-1]
-            Y['subject'][subject][:,1] = ys['ple'][:,1,subject-1]
-            Y['subject'][subject][:,2:] = ys['dec'][:,2:,subject-1]
+            Y['subject'][subject] = ys[:,:,subject-1]
+        
         if Y_test:
-            predicted = ys['int'].copy()
-            observed = ys['int'].copy()
+            predicted = ys.copy()
+            observed = ys.copy()
             for subject in range(1,50):
                 predicted[:,:,subject-1] = Y['subject'][subject]
                 observed[:,:,subject-1] = Y_test['subject'][subject]
             print(scoring.score_summary(predicted,observed))
             
     if subchallenge == 2:
-        def f_int(x, k0=0.718, k1=1.08):
+        def f_transform(x, k0, k1):
             return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
-        def f_ple(x):
-            pass
-        def f_dec(x, k0=0.8425, k1=1.13):
-            return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
+        
         kinds = ['int','ple','dec']
         moments = ['mean','sigma']
-        ys = {kind:{} for kind in kinds}
-        for kind in ['int','ple','dec']:
-            X = X_int if kind=='int' else X_other
-            for moment in ['mean','sigma']:
-                ys[kind][moment] = rfcs[kind][moment].predict(X)
-        y = ys['int']['mean'].copy()
-        y[:,1] = ys['ple']['mean'][:,1]
-        y[:,2:21] = ys['dec']['mean'][:,2:21]
+        y = np.zeros((X_int.shape[0],42))
+        for col in range(42):
+            X = X_int if col in (0,21) else X_other
+            y[:,col] = rfcs[col].predict(X)
         
-        trans = f_int(ys['int']['mean'][:,0])
-        regular = ys['int']['sigma'][:,21]
-        y[:,21] = trans_weight[0]*trans + (1-trans_weight[0])*regular
-        
-        y[:,22] = ys['ple']['sigma'][:,22]
-        
-        trans = f_dec(ys['dec']['mean'][:,2:21])
-        regular = ys['dec']['sigma'][:,23:]
-        y[:,23:] = trans_weight[2]*trans + (1-trans_weight[2])*regular
+        for col in range(21):
+            tw = trans_weight[col]
+            k0,k1 = trans_params[col]
+            y_m = y[:,col]
+            y_s = y[:,col+21]
+            y[:,col+21] = tw*f_transform(y_m,k0,k1) + (1-tw)*y_s
         
         Y['mean_std'] = y
         if Y_test:

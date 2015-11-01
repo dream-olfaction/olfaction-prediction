@@ -7,84 +7,68 @@ from opc_python import * # Import constants.
 from opc_python.utils import scoring
 
 def rfc_final(X,Y,
-              max_features,min_samples_leaf,max_depth,et,
-              Y_test=None,regularize=[0.7,0.7,0.7],n_estimators=100,seed=0):
-    
-    if Y_test is None:
-        Y_test = Y
+              max_features,min_samples_leaf,max_depth,use_et,
+              regularize=np.ones(21)*0.8,Y_test=None,n_estimators=100,seed=0):
     
     def rfc_maker(n_estimators=n_estimators,max_features=max_features,
-                  min_samples_leaf=min_samples_leaf,max_depth=max_depth,et=False):
-        if not et: 
-            return RandomForestRegressor(n_estimators=n_estimators,
-                                     max_features=max_features,
-                                     min_samples_leaf=min_samples_leaf,
-                                     max_depth=max_depth,
-                                     oob_score=True,
-                                     n_jobs=-1,random_state=seed)
+                  min_samples_leaf=min_samples_leaf,max_depth=max_depth,
+                  use_et=False):
+        if not use_et: 
+            kls = RandomForestRegressor
+            kwargs = {'oob_score':True}
         else:
-            return ExtraTreesRegressor(n_estimators=n_estimators,
-                                max_features=max_features,
-                                min_samples_leaf=min_samples_leaf,
-                                max_depth=max_depth,
-                                n_jobs=-1,random_state=seed)
+            kls = ExtraTreesRegressor
+            kwargs = {}
+
+        return kls(n_estimators=n_estimators, max_features=max_features,
+                   min_samples_leaf=min_samples_leaf, max_depth=max_depth,
+                   n_jobs=-1, random_state=seed, **kwargs)
         
-    kinds = ['int','ple','dec']
     rfcs = {}
-    for kind in kinds:
-        rfcs[kind] = {} 
+    for col in range(21):
+        rfcs[col] = {} 
         for subject in range(1,50):
-            rfcs[kind][subject] = rfc_maker(n_estimators=n_estimators,
-                                max_features=max_features[kind],
-                                min_samples_leaf=min_samples_leaf[kind],
-                                max_depth=max_depth[kind],
-                                et=et[kind])
+            rfcs[col][subject] = rfc_maker(n_estimators=n_estimators,
+                                max_features=max_features[col],
+                                min_samples_leaf=min_samples_leaf[col],
+                                max_depth=max_depth[col],
+                                use_et=use_et[col])
 
     for subject in range(1,50):
-        for kind in kinds:
-            rfcs[kind][subject].fit(X,Y[subject])
+        print(subject)
+        from time import gmtime, strftime
+        print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))
+        for col in range(21):
+            rfcs[col][subject].fit(X,Y[subject][:,col])
     
-    predictions = {}
-    for kind in kinds:
-        predictions[kind] = {}
+    predicted0 = rfcs[0][1].predict(X)
+    predicted = np.zeros((predicted0.shape[0],21,49))
+    for col in range(21):
         for subject in range(1,50):
-            if et[kind]:
+            if use_et[col]:
                 # Check in-sample fit because there isn't any alternative. 
-                predictions[kind][subject] = rfcs[kind][subject].predict(X)
+                predicted[:,col,subject-1] = rfcs[col][subject].predict(X)
             else:
-                predictions[kind][subject] = rfcs[kind][subject].oob_prediction_
-
-    predicted = predictions['int'].copy()
-    for subject in range(1,50):
-        predicted[subject][:,0] = predictions['int'][subject][:,0]
-        predicted[subject][:,1] = predictions['ple'][subject][:,1]
-        predicted[subject][:,2:] = predictions['dec'][subject][:,2:]
+                predicted[:,col,subject-1] = rfcs[col][subject].oob_prediction_
 
     # Regularize:  
-    predicted_stack = np.zeros((predicted[1].shape[0],predicted[1].shape[1],49))
-    for subject in range(1,50):
-        predicted_stack[:,:,subject-1] = predicted[subject]
-    predicted_mean = predicted_stack.mean(axis=2,keepdims=True)
-    predicted_reg = {kind:predicted.copy() for kind in kinds}
-    for i,kind in enumerate(kinds):
-        predicted_reg[kind] = regularize[i]*predicted_mean + (1-regularize[i])*predicted_stack
-    predicted_stack[:,0,:] = predicted_reg['int'][:,0,:]
-    predicted_stack[:,1,:] = predicted_reg['ple'][:,1,:]
-    predicted_stack[:,2:,:] = predicted_reg['dec'][:,2:,:]
-    predicted = predicted_stack
-
+    predicted_mean = predicted.mean(axis=2,keepdims=True)
+    predicted_reg = predicted.copy()
+    for col in range(21):
+        predicted_reg[:,col,:] = regularize[col]*predicted_mean[:,col,:] \
+                               + (1-regularize[col])*predicted[:,col,:]
+    predicted = predicted_reg
+    
     observed = predicted.copy()
     for subject in range(1,50):
-        observed[:,:,subject-1] = Y_test[subject]
+        observed[:,:,subject-1] = Y[subject]
     score = scoring.score(predicted,observed)
     rs = {}
     predictions = {}
-    for kind in ['int','ple','dec']:
-        rs[kind] = scoring.r(kind,predicted,observed)
-    
     print("For subchallenge 1:")
     print("\tScore = %.2f" % score)
-    for kind in kinds:
+    for kind in ['int','ple','dec']:
+        rs[kind] = scoring.r(kind,predicted,observed)
         print("\t%s = %.3f" % (kind,rs[kind]))
     
     return (rfcs,score,rs)

@@ -8,69 +8,65 @@ from opc_python.gerkin import dream
 
 # Use random forest regression to fit the entire training data set, one descriptor set at a time.  
 def rfc_final(X,Y_imp,Y_mask,
-              max_features,min_samples_leaf,max_depth,et,use_mask,
-              Y_test=None,n_estimators=100,seed=0):
+              max_features,min_samples_leaf,max_depth,et,use_mask,trans_weight,
+              trans_params,Y_test=None,n_estimators=100,seed=0):
     
     if Y_test is None:
         Y_test = Y_mask
+
     def rfc_maker(n_estimators=n_estimators,max_features=max_features,
                   min_samples_leaf=min_samples_leaf,max_depth=max_depth,et=False):
         if not et: 
-            return RandomForestRegressor(n_estimators=n_estimators,
-                                     max_features=max_features,
-                                     min_samples_leaf=min_samples_leaf,
-                                     max_depth=max_depth,
-                                     oob_score=True,
-                                     n_jobs=-1,random_state=seed)
+            kls = RandomForestRegressor
+            kwargs = {'oob_score':True}
         else:
-            return ExtraTreesRegressor(n_estimators=n_estimators,
-                                max_features=max_features,
-                                min_samples_leaf=min_samples_leaf,
-                                max_depth=max_depth,
-                                n_jobs=-1,random_state=seed)
+            kls = ExtraTreesRegressor
+            kwargs = {}
+
+        return kls(n_estimators=n_estimators, max_features=max_features,
+                   min_samples_leaf=min_samples_leaf, max_depth=max_depth,
+                   n_jobs=-1, random_state=seed, **kwargs)
         
     rfcs = {}
-    for kind in ['int','ple','dec']:
-        rfcs[kind] = {} 
-        for moment in ['mean','sigma']:
-            rfcs[kind][moment] = rfc_maker(n_estimators=n_estimators,
-                                max_features=max_features[kind][moment],
-                                min_samples_leaf=min_samples_leaf[kind][moment],
-                                max_depth=max_depth[kind][moment],
-                                et=et[kind][moment])
+    for col in range(42):
+        print(col)
+        rfcs[col] = rfc_maker(n_estimators=n_estimators,
+                                max_features=max_features[col],
+                                min_samples_leaf=min_samples_leaf[col],
+                                max_depth=max_depth[col],
+                                et=et[col])
 
-    for kind in ['int','ple','dec']:
-        for moment in ['mean','sigma']:
-            if use_mask[kind][moment]:
-                rfcs[kind][moment].fit(X,Y_mask)
-            else:
-                rfcs[kind][moment].fit(X,Y_imp)
+        if use_mask[col]:
+            rfcs[col].fit(X,Y_mask[:,col])
+        else:
+            rfcs[col].fit(X,Y_imp[:,col])
     
-    predictions = {}
-    for kind in ['int','ple','dec']:
-        predictions[kind] = {}
-        for moment in ['mean','sigma']:
-            if et[kind][moment]:
-                # Check in-sample fit because there isn't any alternative.  
-                predictions[kind][moment] = rfcs[kind][moment].predict(X)
-            else:
-                predictions[kind][moment] = rfcs[kind][moment].oob_prediction_
-    predicted = predictions['int']['mean'].copy()
-    for i,moment in enumerate(['mean','sigma']):
-        predicted[:,(0+21*i)] = predictions['int'][moment][:,(0+21*i)]
-        predicted[:,(1+21*i)] = predictions['ple'][moment][:,(1+21*i)]
-        predicted[:,(2+21*i):(21+21*i)] = predictions['dec'][moment][:,(2+21*i):(21+21*i)]
+    predicted = np.zeros((X.shape[0],42))
+    for col in range(42):
+        if et[col]:
+            # Check in-sample fit because there isn't any alternative.  
+            predicted[:,col] = rfcs[col].predict(X)
+        else:
+            predicted[:,col] = rfcs[col].oob_prediction_
+    
+    def f_transform(x, k0, k1):
+            return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
 
+    for col in range(21):
+        tw = trans_weight[col]
+        k0,k1 = trans_params[col]
+        p_m = predicted[:,col]
+        p_s = predicted[:,col+21]
+        predicted[:,col+21] = tw*f_transform(p_m,k0,k1) + (1-tw)*p_s
+    
     observed = Y_test
     score = scoring.score2(predicted,observed)
     rs = {}
-    predictions = {}
     for kind in ['int','ple','dec']:
         rs[kind] = {}
         for moment in ['mean','sigma']:
             rs[kind][moment] = scoring.r2(kind,moment,predicted,observed)
-    rs['int']['trans'] = scoring.r2(None,None,f_int(predicted[:,0]),observed[:,0])
-
+    
     print("For subchallenge 2:")
     print("\tScore = %.2f" % score)
     for kind in ['int','ple','dec']:
@@ -149,7 +145,7 @@ def rfc_cv(X,Y_imp,Y_mask,Y_test=None,n_splits=10,n_estimators=100,
                                 min_samples_leaf=min_samples_leaf,
                                   oob_score=False,n_jobs=-1,random_state=0)
     test_size = 0.2
-    shuffle_split = ShuffleSplit(len(Y_imp),n_splits,test_size=test_size)
+    shuffle_split = ShuffleSplit(len(Y_imp),n_splits,test_size=test_size,random_state=0)
     test_size *= len(Y_imp)
     rs = {'int':{'mean':[],'sigma':[],'trans':[]},'ple':{'mean':[],'sigma':[]},'dec':{'mean':[],'sigma':[]}}
     scores = []
@@ -180,15 +176,15 @@ def rfc_cv(X,Y_imp,Y_mask,Y_test=None,n_splits=10,n_estimators=100,
             if kind2 in rs[kind1]:
                 rs[kind1][kind2] = {'mean':np.mean(rs[kind1][kind2]),'sem':np.std(rs[kind1][kind2])/np.sqrt(n_splits)}
     scores = {'mean':np.mean(scores),'sem':np.std(scores)/np.sqrt(n_splits)}
-    print("For subchallenge 2, using cross-validation with:")
-    print("\tat most %s features:" % max_features)
-    print("\tat least %s samples per leaf:" % min_samples_leaf)
-    print("\tat most %s depth:" % max_depth)
-    print("\tscore = %.2f+/- %.2f" % (scores['mean'],scores['sem']))
+    #print("For subchallenge 2, using cross-validation with:")
+    #print("\tat most %s features:" % max_features)
+    #print("\tat least %s samples per leaf:" % min_samples_leaf)
+    #print("\tat most %s depth:" % max_depth)
+    #print("\tscore = %.2f+/- %.2f" % (scores['mean'],scores['sem']))
     for kind2 in ['mean','sigma','trans']:
         for kind1 in ['int','ple','dec']:
             if kind2 in rs[kind1]:
-                print("\t%s_%s = %.3f+/- %.3f" % (kind1,kind2,rs[kind1][kind2]['mean'],rs[kind1][kind2]['sem']))
+                pass#print("\t%s_%s = %.3f+/- %.3f" % (kind1,kind2,rs[kind1][kind2]['mean'],rs[kind1][kind2]['sem']))
         
     return scores,rs
 

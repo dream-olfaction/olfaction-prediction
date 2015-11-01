@@ -174,25 +174,25 @@ def make_X(molecular_data,kinds,target_dilution=None,threshold=None,
         kinds = [kinds]
     if threshold is None:
         threshold = NAN_PURGE_THRESHOLD
-    print("Getting CIDs and dilutions...")
+    #print("Getting CIDs and dilutions...")
     CID_dilutions = []
     for kind in kinds:
         assert kind in ['training','leaderboard','testset'], \
             "No such kind %s" % kind
         CID_dilutions += loading.get_CID_dilutions(kind,target_dilution=target_dilution)
-    print("Getting basic molecular data...")
+    #print("Getting basic molecular data...")
     molecular_vectors = get_molecular_vectors(molecular_data,CID_dilutions)
-    print("Adding dilution data...")
+    #print("Adding dilution data...")
     molecular_vectors = add_dilutions(molecular_vectors,CID_dilutions)
-    print("Building a matrix...")
+    #print("Building a matrix...")
     X = build_X(molecular_vectors,CID_dilutions)
-    print("Purging data with too many NaNs...")
+    #print("Purging data with too many NaNs...")
     X,good1 = purge1_X(X,threshold=NAN_PURGE_THRESHOLD,good_molecular_descriptors=good1)
-    print("Imputing remaining NaN data...")
+    #print("Imputing remaining NaN data...")
     X,imputer = impute_X(X)
-    print("Purging data that is still bad, if any...")
+    #print("Purging data that is still bad, if any...")
     X,good2 = purge2_X(X,good_molecular_descriptors=good2)
-    print("Normalizing data for fitting...")
+    #print("Normalizing data for fitting...")
     X,means,stds = normalize_X(X,means=means,stds=stds,target_dilution=target_dilution)
     print("The X matrix now has shape (%dx%d) molecules by " % X.shape +\
           "non-NaN good molecular descriptors")
@@ -230,7 +230,7 @@ def add_dilutions(molecular_vectors,CID_dilutions,dilution=None):
 # Build the X_obs matrix out of molecular descriptors.  
 def build_X(molecular_vectors,CID_dilutions):
     X = np.vstack([molecular_vectors[key] for key in CID_dilutions])#sorted(molecular_vectors,key=lambda x:[int(_) for _ in x.split('_')])]) # Key could be CID or CID_dilution.  
-    print("The X matrix has shape (%dx%d) (molecules by molecular descriptors)" % X.shape)
+    #print("The X matrix has shape (%dx%d) (molecules by molecular descriptors)" % X.shape)
     return X
 
 def purge1_X(X,threshold=0.25,good_molecular_descriptors=None):
@@ -241,14 +241,14 @@ def purge1_X(X,threshold=0.25,good_molecular_descriptors=None):
         # Purge these bad descriptors from the X matrix.  
         good_molecular_descriptors = list(set(range(X.shape[1])).difference(nan_molecular_descriptors))
     X = X[:,good_molecular_descriptors]
-    print("The X matrix has shape (%dx%d) (molecules by good molecular descriptors)" % X.shape)
+    #print("The X matrix has shape (%dx%d) (molecules by good molecular descriptors)" % X.shape)
     return X,good_molecular_descriptors
 
 def impute_X(X):
     # The X_obs matrix (molecular descriptors) still has NaN values which need to be imputed.  
     imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
     X = imputer.fit_transform(X)
-    print("The X matrix now has shape (%dx%d) (molecules by non-NaN good molecular descriptors)" % X.shape)
+    #print("The X matrix now has shape (%dx%d) (molecules by non-NaN good molecular descriptors)" % X.shape)
     return X,imputer
 
 def purge2_X(X,good_molecular_descriptors=None):
@@ -260,7 +260,7 @@ def purge2_X(X,good_molecular_descriptors=None):
         # Purge these bad descriptors from the X matrix.  
         good_molecular_descriptors = list(set(good_molecular_descriptors).difference(bad_molecular_descriptors))
     X = X[:,good_molecular_descriptors]
-    print("The X matrix has shape (%dx%d) (molecules by good molecular descriptors)" % X.shape)
+    #print("The X matrix has shape (%dx%d) (molecules by good molecular descriptors)" % X.shape)
     return X,good_molecular_descriptors
 
 def normalize_X(X,means=None,stds=None,target_dilution=None):#,logs=None):
