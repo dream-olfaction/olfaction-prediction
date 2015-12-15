@@ -9,7 +9,7 @@ from opc_python.gerkin import dream
 # Use random forest regression to fit the entire training data set, one descriptor set at a time.  
 def rfc_final(X,Y_imp,Y_mask,
               max_features,min_samples_leaf,max_depth,et,use_mask,trans_weight,
-              trans_params,Y_test=None,n_estimators=100,seed=0):
+              trans_params,Y_test=None,n_estimators=100,seed=0,quiet=False):
     
     if Y_test is None:
         Y_test = Y_mask
@@ -67,12 +67,13 @@ def rfc_final(X,Y_imp,Y_mask,
         for moment in ['mean','sigma']:
             rs[kind][moment] = scoring.r2(kind,moment,predicted,observed)
     
-    print("For subchallenge 2:")
-    print("\tScore = %.2f" % score)
-    for kind in ['int','ple','dec']:
-        for moment in ['mean','sigma']: 
-            print("\t%s_%s = %.3f" % (kind,moment,rs[kind][moment]))
-    
+    if not quiet:
+        print("For subchallenge 2:")
+        print("\tScore = %.2f" % score)
+        for kind in ['int','ple','dec']:
+            for moment in ['mean','sigma']: 
+                print("\t%s_%s = %.3f" % (kind,moment,rs[kind][moment]))
+        
     return (rfcs,score,rs)
 
 def rfc_(X_train,Y_train,X_test_int,X_test_other,Y_test,

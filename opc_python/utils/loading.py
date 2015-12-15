@@ -355,7 +355,7 @@ def make_prediction_files(rfcs,X_int,X_other,target,subchallenge,Y_test=None,
             y[:,col+21] = tw*f_transform(y_m,k0,k1) + (1-tw)*y_s
         
         Y['mean_std'] = y
-        if Y_test:
+        if Y_test is not None:
             print(scoring.score_summary2(Y['mean_std'],Y_test['mean_std'],mask=True))
             
     if write:
