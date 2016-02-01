@@ -9,16 +9,21 @@ from opc_python.gerkin import dream
 # Use random forest regression to fit the entire training data set, one descriptor set at a time.  
 def rfc_final(X,Y_imp,Y_mask,
               max_features,min_samples_leaf,max_depth,et,use_mask,trans_weight,
-              trans_params,Y_test=None,n_estimators=100,seed=0,quiet=False):
+              trans_params,X_test_int=None,X_test_other=None,Y_test=None,n_estimators=100,seed=0,quiet=False):
     
+    if X_test_int is None:
+        X_test_int = X
+    if X_test_other is None:
+        X_test_other = X
     if Y_test is None:
         Y_test = Y_mask
+
 
     def rfc_maker(n_estimators=n_estimators,max_features=max_features,
                   min_samples_leaf=min_samples_leaf,max_depth=max_depth,et=False):
         if not et: 
             kls = RandomForestRegressor
-            kwargs = {'oob_score':True}
+            kwargs = {'oob_score':False}
         else:
             kls = ExtraTreesRegressor
             kwargs = {}
@@ -41,14 +46,23 @@ def rfc_final(X,Y_imp,Y_mask,
         else:
             rfcs[col].fit(X,Y_imp[:,col])
     
-    predicted = np.zeros((X.shape[0],42))
+    predicted = np.zeros((X_test_int.shape[0],42))
     for col in range(42):
-        if et[col]:
-            # Check in-sample fit because there isn't any alternative.  
-            predicted[:,col] = rfcs[col].predict(X)
+        if et[col] or not np.array_equal(X,X_test_int):
+            # Possibly check in-sample fit because there isn't any alternative.  
+            if col in [0,21]:
+                predicted[:,col] = rfcs[col].predict(X_test_int)
+            else:
+                predicted[:,col] = rfcs[col].predict(X_test_other)
         else:
-            predicted[:,col] = rfcs[col].oob_prediction_
-    
+            try:
+                predicted[:,col] = rfcs[col].oob_prediction_
+            except AttributeError:
+                if col in [0,21]:
+                    predicted[:,col] = rfcs[col].predict(X_test_int)
+                else:
+                    predicted[:,col] = rfcs[col].predict(X_test_other)
+
     def f_transform(x, k0, k1):
             return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
 

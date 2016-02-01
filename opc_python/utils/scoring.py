@@ -79,9 +79,9 @@ def r2(kind,moment,predicted,observed,mask=False):
     elif kind == 'dec':
         p = p[:,2:]
         o = o[:,2:]
-    elif kind in range(19):
-        p = p[:,2+kind]
-        o = o[:,2+kind]
+    elif kind in range(21):
+        p = p[:,kind]
+        o = o[:,kind]
     elif kind is None:
         p = p
         o = o
@@ -107,9 +107,9 @@ def r2(kind,moment,predicted,observed,mask=False):
             r_ = pearsonr(p_,o_)[0]
             if np.isnan(r_):
                 denom += 1 # Done to match DREAM scoring.  
-                print('NaN')
+                #print('NaN')
                 if np.std(p_)*np.std(o_) != 0:
-                    print('WTF')
+                    pass#print('WTF')
                 continue
         r += r_
         denom += 1
@@ -131,12 +131,12 @@ def score2(predicted,observed):
 
 def score_summary2(predicted,observed,mask=False):
     score = score2(predicted,observed)
-    r_int_mean = r2('int','mean',predicted,observed)
-    r_ple_mean = r2('ple','mean',predicted,observed)
-    r_dec_mean = r2('dec','mean',predicted,observed)
-    r_int_sigma = r2('int','sigma',predicted,observed)
-    r_ple_sigma = r2('ple','sigma',predicted,observed)
-    r_dec_sigma = r2('dec','sigma',predicted,observed)
+    r_int_mean = r2('int','mean',predicted,observed,mask=mask)
+    r_ple_mean = r2('ple','mean',predicted,observed,mask=mask)
+    r_dec_mean = r2('dec','mean',predicted,observed,mask=mask)
+    r_int_sigma = r2('int','sigma',predicted,observed,mask=mask)
+    r_ple_sigma = r2('ple','sigma',predicted,observed,mask=mask)
+    r_dec_sigma = r2('dec','sigma',predicted,observed,mask=mask)
     return 'Score: %3f; rs = %.3f,%.3f,%.3f,%.3f,%.3f,%.3f' % \
                 (score, r_int_mean, r_ple_mean, r_dec_mean, \
                         r_int_sigma,r_ple_sigma,r_dec_sigma)

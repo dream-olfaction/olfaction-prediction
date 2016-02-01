@@ -10,6 +10,8 @@ from opc_python.utils import loading
 # Perceptual processing (Y) #
 #############################
 
+KINDS = ['training','training-norep','replicated','leaderboard','testset']
+
 def make_Y_obs(kinds, target_dilution=None, imputer=None, quiet=False):
     if target_dilution == 'gold':
         # For actual testing, use 1/1000 dilution for intensity and
@@ -27,8 +29,7 @@ def make_Y_obs(kinds, target_dilution=None, imputer=None, quiet=False):
         imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
     Y = {}
     for kind in kinds:
-        assert kind in ['training','leaderboard','testset'], \
-            "No such kind %s" % kind
+        assert kind in KINDS, "No such kind %s" % kind
         if kind == 'leaderboard':
             loading.format_leaderboard_perceptual_data()
         _, perceptual_data = loading.load_perceptual_data(kind)
@@ -50,13 +51,11 @@ def make_Y_obs(kinds, target_dilution=None, imputer=None, quiet=False):
 
     #print("Combining Y matrices...")
     Y_ = {'subject':{}}
-    Y_['mean_std'] = np.vstack([Y[kind]['mean_std'] for kind in 
-                                ['training','leaderboard','testset'] \
+    Y_['mean_std'] = np.vstack([Y[kind]['mean_std'] for kind in KINDS \
                                 if kind in kinds])
     for subject in range(1,50):
         Y_['subject'][subject] = np.ma.vstack([Y[kind]['subject'][subject] for kind in 
-                                ['training','leaderboard','testset'] \
-                                if kind in kinds])
+                                KINDS if kind in kinds])
     if not quiet:
         print("The Y['mean_std'] matrix now has shape (%dx%d) " % Y_['mean_std'].shape +\
               "molecules by 2 x perceptual descriptors")
@@ -178,8 +177,7 @@ def make_X(molecular_data,kinds,target_dilution=None,threshold=None,
     #print("Getting CIDs and dilutions...")
     CID_dilutions = []
     for kind in kinds:
-        assert kind in ['training','leaderboard','testset'], \
-            "No such kind %s" % kind
+        assert kind in KINDS, "No such kind %s" % kind
         CID_dilutions += loading.get_CID_dilutions(kind,target_dilution=target_dilution)
     #print("Getting basic molecular data...")
     molecular_vectors = get_molecular_vectors(molecular_data,CID_dilutions)
@@ -276,6 +274,79 @@ def normalize_X(X,means=None,stds=None,target_dilution=None):#,logs=None):
     X[:,:num_cols] -= means[np.newaxis,:num_cols]
     X[:,:num_cols] /= stds[np.newaxis,:num_cols]
     return X,means,stds
+
+def get_molecular_data(sources,CIDs):
+    import pandas
+    DATA = '../../data/'
+    if 1 or ('dragon' in sources):
+        molecular_headers, molecular_data = loading.load_molecular_data()
+    if 'episuite' in sources:
+        episuite = pandas.read_table('%s/DREAM_episuite_descriptors.txt' % DATA)
+        episuite.iloc[:,49] = 1*(episuite.iloc[:,49]=='YES ')
+        episuite = episuite.iloc[:,2:].as_matrix()
+        print("Episuite has %d features for %d molecules." % (episuite.shape[1],episuite.shape[0]))
+    '''
+    if 'verbal' in sources:
+        verbal = pandas.read_table('%s/name_features.txt' % DATA, sep='\t', header=None)
+        verbal = verbal.as_matrix()[:,1:]
+        print("Verbal has %d features for %d molecules." % (verbal.shape[1],verbal.shape[0]))
+    '''
+    if 'morgan' in sources:
+        morgan = pandas.read_csv('%s/morgan_sim.csv' % DATA)
+        morgan = morgan.as_matrix()[:,1:]
+        print("Morgan has %d features for %d molecules." % (morgan.shape[1],morgan.shape[0]))
+    if 'nspdk' in sources:
+        # Start to load the NSPDK features.  
+        with open('%s/derived/nspdk_r3_d4_unaug.svm' % DATA) as f:
+            nspdk_dict = {}
+            i = 0
+            while True:
+                x = f.readline()
+                if(len(x)):
+                    key_vals = x.split(' ')[1:]
+                    for key_val in key_vals:
+                        key,val = key_val.split(':')
+                        if key in nspdk_dict:
+                            nspdk_dict[key][CIDs[i]] = val
+                        else:
+                            nspdk_dict[key] = {CIDs[i]:val}
+                    i+=1
+                    if i == len(CIDs):
+                        break
+                else:
+                    break
+        nspdk_dict = {key:value for key,value in nspdk_dict.items() if len(value)>1}
+        # Get the NSPDK features into the right format.  
+        nspdk = np.zeros((len(CIDs),len(nspdk_dict)))
+        for j,(feature,facts) in enumerate(nspdk_dict.items()):
+            for CID,value in facts.items():
+                i = CIDs.index(CID)
+                nspdk[i,j] = value
+        print("NSPDK has %d features for %d molecules." % (nspdk.shape[1],nspdk.shape[0]))
+    if 'gramian' in sources:
+        # These require a large file that is not on GitHub, but can be obtained separately.  
+        nspdk_gramian = pandas.read_table('%s/derived/nspdk_r3_d4_unaug_gramian.mtx' % DATA, delimiter=' ', header=None)
+        nspdk_gramian = nspdk_gramian.as_matrix()[:len(CIDs),:]
+        print("NSPDK Gramian has %d features for %d molecules." % \
+              (nspdk_gramian.shape[1],nspdk_gramian.shape[0]))
+
+    # Add all these new features to the molecular data dict.  
+    mdx = []
+    for i,line in enumerate(molecular_data):
+        CID = int(line[0])
+        if CID in CIDs:
+            index = CIDs.index(CID)
+            if 'episuite' in sources:
+                line += list(episuite[index])
+            if 'morgan' in sources:
+                line += list(morgan[index])
+            if 'nspdk' in sources:
+                line += list(nspdk[index])
+            if 'gramian' in sources:
+                line += list(nspdk_gramian[index])
+            mdx.append(line)
+    print("There are now %d total features." % len(mdx[0]))
+    return molecular_data
 
 #############
 # Utilities #

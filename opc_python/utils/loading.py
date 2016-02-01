@@ -12,15 +12,17 @@ DATA_PATH = os.path.join(ROOT_PATH,'data')
 PREDICTION_PATH = os.path.join(ROOT_PATH,'predictions')
 
 def load_perceptual_data(kind):
-    if kind == 'training':
-        kind = 'TrainSet'
+    if kind in ['training','training-norep','replicated']:
+        kind2 = 'TrainSet'
     elif kind == 'leaderboard':
-        kind = 'LeaderboardSet'
+        kind2 = 'LeaderboardSet'
     else:
         raise ValueError("No such kind: %s" % kind)
     
+    if kind in ['training-norep','replicated']:
+        with_replicates = get_CID_dilutions('replicated')
     data = []
-    file_path = os.path.join(DATA_PATH,'%s.txt' % kind)
+    file_path = os.path.join(DATA_PATH,'%s.txt' % kind2)
     with open(file_path) as f:
         reader = csv.reader(f, delimiter="\t")
         for line_num,line in enumerate(reader):
@@ -28,10 +30,23 @@ def load_perceptual_data(kind):
                 line[0:6] = [x.strip() for x in line[0:6]]
                 line[2] = True if line[2]=='replicate' else False
                 line[6:] = ['NaN' if x=='NaN' else int(x) for x in line[6:]]
-                data.append(line)
+                CID = int(line[0])
+                dilution = line[4]
+                mag = dilution2magnitude(dilution)
+                high = line[3] == 'high'
+                CID_dilution = "%d_%g_%d" % (CID,mag,high)
+                if kind == 'training-norep':
+                    if CID_dilution not in with_replicates:
+                        data.append(line)
+                elif kind == 'replicated':
+                    if CID_dilution in with_replicates:
+                        data.append(line)
+                else:
+                    data.append(line)
             else:
                 headers = line
     return headers,data
+
 
 def format_leaderboard_perceptual_data(data_path=''):
     new_leaderboard_file_path = os.path.join(DATA_PATH,'LeaderboardSet.txt')
@@ -181,29 +196,34 @@ def load_molecular_data():
     return headers,data
 
 def get_CID_dilutions(kind,target_dilution=None):
-    assert kind in ['training','leaderboard','testset']
+    assert kind in ['training','training-norep','replicated','leaderboard','testset']
     """Return CIDs for molecules that will be used for:
         'leaderboard': the leaderboard to determine the provisional 
                        leaders of the competition.
         'testset': final testing to determine the winners 
                    of the competition."""
-    if kind == 'training':
+    if kind in ['training','replicated']:
         data = []
-        _,lines = load_perceptual_data(kind)
+        _,lines = load_perceptual_data('training')
         for line in lines[1:]:
-            CID = int(line[0])
-            dilution = line[4]
-            mag = dilution2magnitude(dilution)
-            high = line[3] == 'high'
-            if target_dilution == 'high' and not high:
-                continue
-            if target_dilution == 'low' and not low:
-                continue
-            elif target_dilution not in [None,'high','low'] and \
-                 mag != target_dilution:
-                 continue
-            data.append("%d_%g_%d" % (CID,mag,high))
+            if line[2] or kind != 'replicated':
+                CID = int(line[0])
+                dilution = line[4]
+                mag = dilution2magnitude(dilution)
+                high = line[3] == 'high'
+                if target_dilution == 'high' and not high:
+                    continue
+                if target_dilution == 'low' and not low:
+                    continue
+                elif target_dilution not in [None,'high','low'] and \
+                     mag != target_dilution:
+                     continue
+                data.append("%d_%g_%d" % (CID,mag,high))
         data = list(set(data))
+    elif kind == 'training-norep':
+        training = set(get_CID_dilutions('training',target_dilution=target_dilution))
+        replicated = set(get_CID_dilutions('replicated',target_dilution=target_dilution))
+        data = list(training.difference(replicated))
     else:
         dilution_file_path = os.path.join(DATA_PATH,'dilution_%s.txt' % kind)
         with open(dilution_file_path) as f:
