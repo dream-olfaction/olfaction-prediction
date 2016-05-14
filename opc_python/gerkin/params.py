@@ -53,4 +53,69 @@ best[37]=[False,200,6,4,1.0,True]
 best[38]=[False,200,2,1,1.0,True]
 best[39]=[False,200,6,1,1.0,True]
 best[40]=[False,200,6,4,1.0,True]
-best[41]=[False,None,15,1,0.38,True]              
+best[41]=[False,None,15,1,0.38,True]     
+
+
+def get_params(i):
+    cols = range(42)
+    return {col:best[col][i] for col in cols}
+
+
+def get_other_params():
+    use_et = get_params(0)
+    max_features = get_params(1)
+    max_depth = get_params(2)
+    min_samples_leaf = get_params(3)
+    trans_weight = get_params(4)
+    regularize = get_params(4)
+    use_mask = get_params(5)
+    for col in range(21):
+        trans_weight[col] = trans_weight[col+21]
+    return (use_et,max_features,max_depth,min_samples_leaf,
+            trans_weight,regularize,use_mask)
+
+
+def get_trans_params(Y, descriptors, plot=True):
+    import matplotlib
+    import matplotlib.pyplot as plt
+    import numpy as np
+    # Plot stdev vs mean for each descriptor, and fit to a theoretically-motivated function.  
+    # These fit parameters will be used in the final model fit.  
+    
+    def f_transformation(x, k0=1.0, k1=1.0):
+        return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
+        
+    def sse(x, mean, stdev):
+        predicted_stdev = f_transformation(mean, k0=x[0], k1=x[1])
+        sse = np.sum((predicted_stdev - stdev)**2)
+        return sse
+
+    if plot:
+        matplotlib.rcParams['font.size'] = 12
+        fig,axes = plt.subplots(3,7,sharex=True,sharey=True,figsize=(12,6))
+        ax = axes.flat
+    trans_params = {col:None for col in range(21)}
+    
+    from scipy.optimize import minimize
+    for col in range(len(descriptors)):    
+        Y_mean = Y['mean_std'][:,col]
+        Y_stdev = Y['mean_std'][:,col+21]
+        x = [1.0,1.0]
+        res = minimize(sse, x, args=(Y_mean,Y_stdev), method='L-BFGS-B')
+        trans_params[col] = res.x # We will use these for our transformations.  
+        if plot:
+            ax[col].scatter(Y_mean,Y_stdev,s=0.1)
+            x_ = np.linspace(0,100,100)
+            #ax[col].plot(x_,f_transformation(x_, k0=res.x[0], k1=res.x[1]))
+            ax[col].set_title(descriptors[col])
+            ax[col].set_xlim(0,100)
+            ax[col].set_ylim(0,50)
+            if col == 17:
+                ax[col].set_xlabel('Mean')
+            if col == 7:
+                ax[col].set_ylabel('StDev')
+    
+    if plot:
+        pass#plt.tight_layout()
+
+    return trans_params

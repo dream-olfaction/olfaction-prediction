@@ -11,11 +11,13 @@ from opc_python.utils import scoring,search
 DATA_PATH = os.path.join(ROOT_PATH,'data')
 PREDICTION_PATH = os.path.join(ROOT_PATH,'predictions')
 
-def load_perceptual_data(kind):
+def load_perceptual_data(kind, just_headers=False):
     if kind in ['training','training-norep','replicated']:
         kind2 = 'TrainSet'
     elif kind == 'leaderboard':
         kind2 = 'LeaderboardSet'
+    elif kind == 'testset':
+        kind2 = 'TestSet'
     else:
         raise ValueError("No such kind: %s" % kind)
     
@@ -45,7 +47,14 @@ def load_perceptual_data(kind):
                     data.append(line)
             else:
                 headers = line
+                if just_headers:
+                    return headers
     return headers,data
+
+
+def get_descriptors():
+    headers = load_perceptual_data('training', just_headers=True)
+    return headers[6:]
 
 
 def format_leaderboard_perceptual_data(data_path=''):
@@ -106,6 +115,46 @@ def format_leaderboard_perceptual_data(data_path=''):
         line = lines_new[line_id]
         writer.writerow(line)
     f_new.close()
+
+def format_testset_perceptual_data(data_path=''):
+    new_leaderboard_file_path = os.path.join(DATA_PATH,'TestSet.txt')
+    f_new = open(new_leaderboard_file_path,'w')
+    writer = csv.writer(f_new,delimiter="\t")
+    headers,_ = load_perceptual_data('training')
+    descriptors = headers[6:]
+    writer.writerow(headers)
+    CID_dilutions = get_CID_dilutions('testset',target_dilution='raw')
+    dilutions = {}
+    for CID_dilution in CID_dilutions:
+        CID,mag,high = CID_dilution.split('_')
+        dilutions[int(CID)] = {'dilution':('1/%d' % 10**(-int(mag))),
+                               'high':int(high)}
+    lines_new = {}
+    
+    gs_path = os.path.join(DATA_PATH,'GS.txt')
+    with open(gs_path) as f:
+        reader = csv.reader(f, delimiter="\t")
+        for line_num,line in enumerate(reader):
+            if line_num > 0:
+                CID,subject,descriptor,value = line
+                CID = int(CID)
+                subject = int(subject)
+                if descriptor == 'INTENSITY/STRENGTH':
+                    dilution = '1/1000'
+                    high = 1-dilutions[CID]['high']
+                else:
+                    high = dilutions[CID]['high']
+                    dilution = dilutions[CID]['dilution'] if high else '1/1000'
+                line_id = '%d_%d_%d' % (CID,subject,dilution2magnitude(dilution))
+                if line_id not in lines_new:
+                    lines_new[line_id] = [CID,'N/A',0,'high' if high else 'low',dilution,subject]+['NaN']*21
+                lines_new[line_id][6+descriptors.index(descriptor.strip())] = value
+
+    for line_id in sorted(lines_new,key=lambda x:[int(_) for _ in x.split('_')]):
+        line = lines_new[line_id]
+        writer.writerow(line)
+    f_new.close()
+
 
 def load_leaderboard_perceptual_data(target_dilution=None):
     """Loads directly into Y"""
@@ -234,7 +283,7 @@ def get_CID_dilutions(kind,target_dilution=None):
             for i,(CID,dilution) in enumerate(lines):
                 mag = dilution2magnitude(dilution)
                 high = (mag > -3)
-                if target_dilution == 'high':
+                if target_dilution in ['high','gold']:
                     if high:
                         data.append('%d_%g_%d' % (CID,mag,1))
                     else:
@@ -281,6 +330,46 @@ def get_CID_rank(kind,dilution=-3):
 def dilution2magnitude(dilution):
     denom = dilution.replace('"','').replace("'","").split('/')[1].replace(',','')
     return np.log10(1.0/float(denom))
+
+
+def load_data_matrix(kind='training',gold_standard_only=False,
+                     only_replicates=False):
+    """
+    Loads the data into a 6-dimensional matrix:
+    Indices are:
+     subject number (0-48)
+     CID index
+     descriptor number (0-20)
+     dilution rank (1/10=0, 1/1000=1, 1/100000=2, 1/1000000=3)
+     replicate (original=0, replicate=1)
+    Data is masked so locations with no data are not included in statistics on this array.  
+    """
+
+    _, perceptual_obs_data = load_perceptual_data(kind)
+    CIDs = get_CIDs(kind)
+    data = np.ma.zeros((49,len(CIDs),21,4,2),dtype='float')
+    data.mask +=1
+    for line in perceptual_obs_data:
+        CID_index = CIDs.index(int(line[0]))
+        subject = int(line[5])
+        is_replicate = line[2]
+        #is_replicate = False
+        dilution_index = ['1/10','1/1,000','1/100,000','1/10,000,000'].index(line[4])
+        for i,value in enumerate(line[6:]):
+            indices = subject-1,CID_index,i,dilution_index,int(is_replicate)
+            if value != 'NaN':
+                if gold_standard_only:
+                    if (i==0 and dilution_index==1) or (i>0 and line[3]=='high'):
+                        data[indices] = float(value)
+                else:
+                    data[indices] = float()
+    if only_replicates:
+        only_replicates = data.copy()
+        only_replicates.mask[:,:,:,:,0] = (data.mask[:,:,:,:,0] + data.mask[:,:,:,:,1])>0
+        only_replicates.mask[:,:,:,:,1] = (data.mask[:,:,:,:,0] + data.mask[:,:,:,:,1])>0
+        data = only_replicates
+    return data
+
 
 """Output"""
 

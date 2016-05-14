@@ -32,6 +32,8 @@ def make_Y_obs(kinds, target_dilution=None, imputer=None, quiet=False):
         assert kind in KINDS, "No such kind %s" % kind
         if kind == 'leaderboard':
             loading.format_leaderboard_perceptual_data()
+        if kind == 'testset':
+            loading.format_testset_perceptual_data()
         _, perceptual_data = loading.load_perceptual_data(kind)
         #print("Getting basic perceptual data...")
         matrices = get_perceptual_matrices(perceptual_data,
@@ -168,8 +170,8 @@ def nan_summary(perceptual_obs_matrices):
 # Molecular processing (X) #
 ############################
 
-def make_X(molecular_data,kinds,target_dilution=None,threshold=None,
-           good1=None,good2=None,means=None,stds=None):
+def make_X(molecular_data,kinds,target_dilution=None,threshold=None,bad=None,
+           good1=None,good2=None,means=None,stds=None,raw=False):
     if type(kinds) is str:
         kinds = [kinds]
     if threshold is None:
@@ -185,14 +187,21 @@ def make_X(molecular_data,kinds,target_dilution=None,threshold=None,
     molecular_vectors = add_dilutions(molecular_vectors,CID_dilutions)
     #print("Building a matrix...")
     X = build_X(molecular_vectors,CID_dilutions)
-    #print("Purging data with too many NaNs...")
-    X,good1 = purge1_X(X,threshold=NAN_PURGE_THRESHOLD,good_molecular_descriptors=good1)
-    #print("Imputing remaining NaN data...")
-    X,imputer = impute_X(X)
-    #print("Purging data that is still bad, if any...")
-    X,good2 = purge2_X(X,good_molecular_descriptors=good2)
-    #print("Normalizing data for fitting...")
-    X,means,stds = normalize_X(X,means=means,stds=stds,target_dilution=target_dilution)
+    if not raw:
+        if bad:
+            good0 = list(set(range(X.shape[1])).difference(bad))
+            X = X[:,good0]
+        #print("Purging data with too many NaNs...")
+        X,good1 = purge1_X(X,threshold=NAN_PURGE_THRESHOLD,good_molecular_descriptors=good1)
+        #print("Imputing remaining NaN data...")
+        X,imputer = impute_X(X)
+        #print("Purging data that is still bad, if any...")
+        X,good2 = purge2_X(X,good_molecular_descriptors=good2)
+        #print("Normalizing data for fitting...")
+        X,means,stds = normalize_X(X,means=means,stds=stds,target_dilution=target_dilution)
+    else:
+        good1,good2 = list(range(X.shape[1])),list(range(X.shape[1]))
+        means,stds,imputer = None,None,None
     print("The X matrix now has shape (%dx%d) molecules by " % X.shape +\
           "non-NaN good molecular descriptors")
     return X,good1,good2,means,stds,imputer
