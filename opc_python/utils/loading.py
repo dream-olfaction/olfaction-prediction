@@ -52,9 +52,13 @@ def load_perceptual_data(kind, just_headers=False):
     return headers,data
 
 
-def get_descriptors():
+def get_descriptors(format=False):
     headers = load_perceptual_data('training', just_headers=True)
-    return headers[6:]
+    desc = headers[6:]
+    if format:
+        desc = [desc[col].split('/')[1 if col==1 else 0] for col in range(21)]
+        desc = [desc[col][0]+desc[col][1:].lower() for col in range(21)]
+    return desc
 
 
 def format_leaderboard_perceptual_data(data_path=''):
@@ -410,6 +414,7 @@ def write_prediction_files(Y,kind,subchallenge,name):
         f.close()
 
 def make_prediction_files(rfcs,X_int,X_other,target,subchallenge,Y_test=None,
+                          intensity_mask=None,
                           write=True,trans_weight=np.zeros(21),
                           trans_params=np.ones((21,2)),regularize=[0.8],name=None):
     if len(regularize)==1 and type(regularize)==list:
@@ -420,18 +425,22 @@ def make_prediction_files(rfcs,X_int,X_other,target,subchallenge,Y_test=None,
     Y = {'subject':{}}
     
     if subchallenge == 1:
-        y0 = rfcs[0][1].predict(X_int)
-        ys = np.zeros((y0.shape[0],21,49))
+        y1 = rfcs[1][1].predict(X_other)
+        ys = np.ma.masked_all((y1.shape[0],21,49))
         for col in range(21):
             X = X_int if col==0 else X_other
+            if col>0 or intensity_mask is None:
+                mol = range(X.shape[0])
+            else:
+                mol = intensity_mask
             for subject in range(1,50):
-                ys[:,col,subject-1] = rfcs[col][subject].predict(X)
+                ys[mol,col,subject-1] = rfcs[col][subject].predict(X)
         
         # Regularize
-        ys_mean = ys.mean(axis=2,keepdims=True)
+        ys_mean = np.ma.mean(ys,axis=2)
         ys_reg = ys.copy()
         for col in range(21):
-            ys_reg[:,col,:] = regularize[col]*ys_mean[:,col,:] + (1-regularize[col])*ys[:,col,:]
+            ys_reg[:,col,:] = regularize[col]*ys_mean[:,col,np.newaxis] + (1-regularize[col])*ys[:,col,:]
         ys = ys_reg
 
         for subject in range(1,50):
@@ -451,10 +460,15 @@ def make_prediction_files(rfcs,X_int,X_other,target,subchallenge,Y_test=None,
         
         kinds = ['int','ple','dec']
         moments = ['mean','sigma']
-        y = np.zeros((X_int.shape[0],42))
+        y1 = rfcs[1].predict(X_other)
+        y = np.ma.masked_all((y1.shape[0],42))
         for col in range(42):
             X = X_int if col in (0,21) else X_other
-            y[:,col] = rfcs[col].predict(X)
+            if col>0 or intensity_mask is None:
+                mol = range(X.shape[0])
+            else:
+                mol = intensity_mask
+            y[mol,col] = rfcs[col].predict(X)
         
         for col in range(21):
             tw = trans_weight[col]
