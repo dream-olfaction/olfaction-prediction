@@ -1,7 +1,6 @@
-# olfaction-prediction
-Collaborative Phase of DREAM Olfaction Prediction Challenge
+## DREAM Olfaction Prediction models and related resources
 
-This project is structured as:  
+### This project is structured as:  
 
 * `data/` (Where the data files go)
 
@@ -34,6 +33,7 @@ This project is structured as:
 
   * `utils` (Generic loading and scoring utilities that should work equally well for all approaches).  
   * `gerkin` (Modules and workflows used by Rick Gerkin, which can optionally be used by other collaborators; relies on 3a).  
+  * `paper` (Notebooks used to produce figures for the journal article).
 
     Here are full example workflows for sub-challenge [1](https://github.com/dream-olfaction/olfaction-prediction/blob/master/opc_python/gerkin/challenge1.ipynb) and [2](https://github.com/dream-olfaction/olfaction-prediction/blob/master/opc_python/gerkin/challenge2.ipynb) using both 3a and 3b above.  These workflows use Jupyter notebooks running IPython kernels.  Other languages are also supported in Jupyter.  The links above show read-only renderings of the workflows, but they can be interacted with on any machine running an Jupyter notebook server.  
 
@@ -43,3 +43,5 @@ This project is structured as:
 Files using other languages should be placed in new subdirectories of this project, e.g.
 * `opc_matlab` (A MATLAB package for loading the data, generating models, and writing prediction files).  
 * `opc_r` (An R package for loading the data, generating models, and writing prediction files).  
+
+### Scripts used by the organizers to score original challenge submissions are [here](https://github.com/Sage-Bionetworks/OlfactionDREAMChallenge/tree/90adc4695cae6adb0e40222d21e2619b5b776ea0/src/main/resources).
