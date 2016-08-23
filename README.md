@@ -42,6 +42,6 @@
 
 Files using other languages should be placed in new subdirectories of this project, e.g.
 * `opc_matlab` (A MATLAB package for loading the data, generating models, and writing prediction files).  
-* `opc_r` (An R package for loading the data, generating models, and writing prediction files).  
+* `opc_R` (An R package for loading the data, generating models, and writing prediction files).  
 
 ### Scripts used by the organizers to score original challenge submissions are [here](https://github.com/Sage-Bionetworks/OlfactionDREAMChallenge/tree/90adc4695cae6adb0e40222d21e2619b5b776ea0/src/main/resources).
