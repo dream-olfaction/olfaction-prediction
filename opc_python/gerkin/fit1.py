@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
 from sklearn.cross_validation import ShuffleSplit,cross_val_score
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso,Ridge
 
 from opc_python import * # Import constants.  
 from opc_python.utils import prog,scoring
@@ -267,3 +267,28 @@ def lasso_(X_train,Y_train,X_test,Y_test,alpha=0.1,regularize=[0.7,0.7,0.7]):
         scores[phase] = (r_ple,r2_ple)
     return lassos,scores['train'],scores['test']
 
+
+def compute_linear_predictions(X_train,X_test_int,X_test_other,Y_train,
+                               lin_ranked,max_features=100,
+                               alpha=10.0):
+    max_features = 100
+    n_molecules = X_test_other.shape[0]
+    y_pred = np.ma.array(np.zeros((n_molecules,21,49)),mask=True)
+
+    for col in range(21): # For each descriptor.  
+        X_test = X_test_int if col==0 else X_test_other
+        n_molecules = X_test.shape[0]
+        est = Ridge(alpha=alpha,fit_intercept=True, normalize=False, 
+                    copy_X=True, max_iter=None, tol=0.001, 
+                    solver='auto', random_state=0)
+        features = lin_ranked[col,:][:max_features]
+        for subject in range(1,50):
+            observed = Y_train['subject'][subject][:,col] # Perceptual data for this descriptor.  
+            # Fit the model on the training data with the 'max_features' features
+            est.fit(X_train[:,:-1][:,features],
+                    observed)
+            predicted = est.predict(X_test[:,features]) # Predict the test data.  
+            y_pred[:n_molecules,col,subject-1] = predicted
+    # Regularize each subject to the across-subject mean
+    y_pred = y_pred.mean(axis=2)[...,np.newaxis]*0.8 + y_pred*0.2
+    return y_pred

@@ -153,6 +153,7 @@ def format_testset_perceptual_data(data_path=''):
                 if line_id not in lines_new:
                     lines_new[line_id] = [CID,'N/A',0,'high' if high else 'low',dilution,subject]+['NaN']*21
                 lines_new[line_id][6+descriptors.index(descriptor.strip())] = value
+    #print(line_num,len(lines_new))
 
     for line_id in sorted(lines_new,key=lambda x:[int(_) for _ in x.split('_')]):
         line = lines_new[line_id]
@@ -235,15 +236,17 @@ def load_leaderboard_perceptual_data(target_dilution=None):
     Y['mean_std'] = Y['mean_std'].round(2)
     return Y
 
-def load_molecular_data():
+def load_molecular_data(CIDs=None):
     mdd_file_path = os.path.join(DATA_PATH,'molecular_descriptors_data.txt')
     with open(mdd_file_path) as f:
         reader = csv.reader(f, delimiter="\t")
         data = []
         for line_num,line in enumerate(reader):
             if line_num > 0:
-                line[1:] = ['NaN' if x=='NaN' else float(x) for x in line[1:]]
-                data.append(line)
+                CID = int(line[0])
+                if CIDs is None or CID in CIDs:
+                    line[1:] = ['NaN' if x=='NaN' else float(x) for x in line[1:]]
+                    data.append(line)
             else:
                 headers = line
     return headers,data
@@ -298,7 +301,8 @@ def get_CID_dilutions(kind,target_dilution=None):
                     else:
                         data.append('%d_%g_%d' % (CID,-3,0))
                 elif target_dilution is None:
-                    data.append('%d_%g_%d' % (CID,mag,high))
+                    if kind!='testset' or mag > -3:
+                        data.append('%d_%g_%d' % (CID,mag,high))
                     data.append('%d_%g_%d' % (CID,-3,1-high))
                 elif target_dilution in [mag,'raw']:
                     data.append('%d_%g_%d' % (CID,mag,high))
@@ -307,8 +311,8 @@ def get_CID_dilutions(kind,target_dilution=None):
  
     return sorted(data,key=lambda x:[int(_) for _ in x.split('_')])
 
-def get_CIDs(kind):
-    CID_dilutions = get_CID_dilutions(kind)
+def get_CIDs(kind, target_dilution=None):
+    CID_dilutions = get_CID_dilutions(kind, target_dilution=target_dilution)
     CIDs = [int(_.split('_')[0]) for _ in CID_dilutions]
     return sorted(list(set(CIDs)))
 
