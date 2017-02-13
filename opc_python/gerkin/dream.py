@@ -76,44 +76,6 @@ def make_Y_obs(kinds, target_dilution=None, imputer=None, quiet=False, subjects=
               "molecules x dilutions by perceptual descriptors, one for each subject")
     return Y_,imputer
 
-def get_perceptual_matrices(perceptual_data,target_dilution=None,
-                            use_replicates=True,subjects=range(1,50)):
-    perceptual_matrices = {}
-    counts = {}
-    CIDs = []
-    for row in perceptual_data:
-        CID = int(row[0])
-        replicate = int(row[2])
-        CIDs.append(CID)
-        dilution = loading.dilution2magnitude(row[4])
-        if target_dilution is None:
-            pass
-        elif dilution == target_dilution:
-            pass
-        elif target_dilution in ['low','high']:
-            if row[3] != target_dilution:
-                continue
-        else:
-            continue
-        high = row[3] == 'high'
-        key = '%d_%g_%d' % (CID,dilution,high)
-        if key not in perceptual_matrices:
-            perceptual_matrices[key] = np.ones((49,21))*np.NaN
-            counts[key] = np.zeros(49)
-        data = np.array([np.nan if _=='NaN' else int(_) for _ in row[6:]])
-        subject = int(row[5])
-        if subject in subjects:
-            if replicate:
-                if use_replicates:
-                    perceptual_matrices[key][subject-1,:] *= counts[key][subject-1]
-                    perceptual_matrices[key][subject-1,:] += data
-                    counts[key][subject-1] += 1
-                    perceptual_matrices[key][subject-1,:] /= counts[key][subject-1]
-            else:
-                perceptual_matrices[key][subject-1,:] = data
-                
-    return perceptual_matrices
-
 def get_perceptual_vectors(perceptual_matrices, imputer=None, statistic='mean',
                            target_dilution=None):
     perceptual_vectors = {}
@@ -184,38 +146,32 @@ def nan_summary(perceptual_obs_matrices):
 # Molecular processing (X) #
 ############################
 
-def make_X(molecular_data,kinds,CID_dilutions=None,target_dilution=None,threshold=None,bad=None,
+def make_X(df,CID_dilutions,target_dilution=None,threshold=None,bad=None,
            good1=None,good2=None,means=None,stds=None,raw=False,quiet=False):
-    if type(kinds) is str:
-        kinds = [kinds]
+    # df produced from e.g. loading.get_molecular_data()
     if threshold is None:
         threshold = NAN_PURGE_THRESHOLD
-    #print("Getting CIDs and dilutions...")
-    if CID_dilutions is None:
-        CID_dilutions = []
-        for kind in kinds:
-            assert kind in KINDS, "No such kind %s" % kind
-            CID_dilutions += loading.get_CID_dilutions(kind,target_dilution=target_dilution)
-    #print("Getting basic molecular data...")
-    molecular_vectors = get_molecular_vectors(molecular_data,CID_dilutions)
-    #print("Adding dilution data...")
-    molecular_vectors = add_dilutions(molecular_vectors,CID_dilutions)
-    #print("Building a matrix...")
-    X = build_X(molecular_vectors,CID_dilutions)
+    data = [list(df.loc[CID])+[dilution,i] \
+            for i,(CID,dilution) in enumerate(CID_dilutions)]
+    X = pd.DataFrame(data=data,index=pd.MultiIndex.from_tuples(CID_dilutions,
+                                     names=['CID','Dilution']),
+                     columns=list(df.columns)+['dilution','mean_dilution'])
     if not raw:
         if bad:
-            good0 = list(set(range(X.shape[1])).difference(bad))
-            X = X[:,good0]
+            X = X.drop(bad)
         #print("Purging data with too many NaNs...")
-        X,good1 = purge1_X(X,threshold=NAN_PURGE_THRESHOLD,good_molecular_descriptors=good1)
+        X,good1 = purge1_X(X,threshold=NAN_PURGE_THRESHOLD,
+                           good_molecular_descriptors=good1)
         #print("Imputing remaining NaN data...")
         X,imputer = impute_X(X)
         #print("Purging data that is still bad, if any...")
         X,good2 = purge2_X(X,good_molecular_descriptors=good2)
+        
         #print("Normalizing data for fitting...")
-        X,means,stds = normalize_X(X,means=means,stds=stds,target_dilution=target_dilution)
+        X,means,stds = normalize_X(X,means=means,stds=stds,
+                                   target_dilution=target_dilution)
     else:
-        good1,good2 = list(range(X.shape[1])),list(range(X.shape[1]))
+        good1,good2 = X.columns,X.columns
         means,stds,imputer = None,None,None
     if not quiet:
         print("The X matrix now has shape (%dx%d) molecules by " % X.shape +\
@@ -234,7 +190,8 @@ def get_molecular_vectors(molecular_data,CID_dilutions):
             molecular_vectors[CID] = np.array([np.nan if _=='NaN' else float(_) for _ in row[1:]])
     return molecular_vectors
 
-def add_dilutions(molecular_vectors,CID_dilutions,dilution=None):
+'''
+def add_dilutions(molecular_data,CID_dilutions,dilution=None):
     if 1:#dilution in [None,'low','high']:
         molecular_vectors_ = {}
         for CID_dilution in CID_dilutions:
@@ -251,141 +208,54 @@ def add_dilutions(molecular_vectors,CID_dilutions,dilution=None):
         #print('There are now %d molecular vectors of length %d, one for each molecule and dilution' \
         #    % (len(molecular_vectors),len(molecular_vectors[CID_dilution])))
     return molecular_vectors
-
-# Build the X_obs matrix out of molecular descriptors.  
-def build_X(molecular_vectors,CID_dilutions):
-    X = np.vstack([molecular_vectors[key] for key in CID_dilutions])#sorted(molecular_vectors,key=lambda x:[int(_) for _ in x.split('_')])]) # Key could be CID or CID_dilution.  
-    #print("The X matrix has shape (%dx%d) (molecules by molecular descriptors)" % X.shape)
-    return X
+'''
 
 def purge1_X(X,threshold=0.25,good_molecular_descriptors=None):
+    threshold = X.shape[0]*threshold
     if good_molecular_descriptors is None:
-        good_molecular_descriptors = range(X.shape[1])
-        # Which columns of X (which molecular descriptors) have NaNs for at least 'threshold' fraction of the molecules?  
-        nan_molecular_descriptors = np.where(np.isnan(X).sum(axis=0) > X.shape[0]*threshold)[0] # At least 'threshold' NaNs.  
-        # Purge these bad descriptors from the X matrix.  
-        good_molecular_descriptors = list(set(range(X.shape[1])).difference(nan_molecular_descriptors))
-    X = X[:,good_molecular_descriptors]
+        # Which columns of X (which molecular descriptors) have NaNs for at 
+        # least 'threshold' fraction of the molecules?  
+        valid = np.isnan(X).sum()<threshold # True/False
+        valid = valid[valid] # Only the 'Trues'
+        good_molecular_descriptors = list(valid.index)
+    X = X.loc[:,good_molecular_descriptors]
     #print("The X matrix has shape (%dx%d) (molecules by good molecular descriptors)" % X.shape)
     return X,good_molecular_descriptors
 
 def impute_X(X):
     # The X_obs matrix (molecular descriptors) still has NaN values which need to be imputed.  
     imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
-    X = imputer.fit_transform(X)
+    X[:] = imputer.fit_transform(X)
     #print("The X matrix now has shape (%dx%d) (molecules by non-NaN good molecular descriptors)" % X.shape)
     return X,imputer
 
 def purge2_X(X,good_molecular_descriptors=None):
     if good_molecular_descriptors is None:
-        good_molecular_descriptors = range(X.shape[1])
-        zero_molecular_descriptors = np.where(np.abs(np.sum(X,axis=0))==0)[0] # All zeroes.  
-        invariant_molecular_descriptors = np.where(np.std(X,axis=0)==0)[0] # Same value for all molecules.  
-        bad_molecular_descriptors = set(zero_molecular_descriptors).union(invariant_molecular_descriptors) # Both of the above.  
+        zeros = np.abs(np.sum(X,axis=0))==0 # All zeroes.  
+        invariants = np.std(X,axis=0)==0 # Same value for all molecules.  
+        valid = ~zeros & ~invariants
+        valid = valid[valid]
         # Purge these bad descriptors from the X matrix.  
-        good_molecular_descriptors = list(set(good_molecular_descriptors).difference(bad_molecular_descriptors))
-    X = X[:,good_molecular_descriptors]
+        good_molecular_descriptors = list(valid.index)
+    X = X.loc[:,good_molecular_descriptors]
     #print("The X matrix has shape (%dx%d) (molecules by good molecular descriptors)" % X.shape)
     return X,good_molecular_descriptors
 
 def normalize_X(X,means=None,stds=None,target_dilution=None):#,logs=None):
     num_cols = X.shape[1]
-    if 1:#target_dilution in [None,'low','high']:
-        num_cols -= 2
-    X[:,:num_cols] = np.sign(X[:,:num_cols])*np.abs(X[:,:num_cols])**(1.0/3)
+    num_cols -= 2
+    X.iloc[:,:num_cols] = np.sign(X.iloc[:,:num_cols])*\
+                            np.abs(X.iloc[:,:num_cols])**(1.0/3)
     if means is None:
-        means = np.mean(X,axis=0)
+        means = X.mean(axis=0)
+        means[num_cols:] = 0
     if stds is None:
-        stds = np.std(X,axis=0)
+        stds = X.std(axis=0)
+        stds[num_cols:] = 1
         stds[stds==0] = 1
-    X[:,:num_cols] -= means[np.newaxis,:num_cols]
-    X[:,:num_cols] /= stds[np.newaxis,:num_cols]
+    X = X.sub(means,axis=1)
+    X = X.div(stds,axis=1)
     return X,means,stds
-
-def get_molecular_data(sources,CIDs):
-    import pandas
-    if 1 or ('dragon' in sources):
-        molecular_headers, molecular_data = loading.load_molecular_data(CIDs=CIDs)
-        print("Dragon has %d features for %d molecules." % \
-                (len(molecular_headers)-1,len(molecular_data)))
-    if 'episuite' in sources:
-        x = pd.read_table('%s/DREAM_episuite_descriptors.txt' % DATA,index_col=0).drop('SMILES',1)
-        x = x.loc[CIDs]
-        x.iloc[:,47] = 1*(x.iloc[:,47]=='YES ')
-        episuite = x.as_matrix()
-        print("Episuite has %d features for %d molecules." % (episuite.shape[1],episuite.shape[0]))
-    '''
-    if 'verbal' in sources:
-        verbal = pandas.read_table('%s/name_features.txt' % DATA, sep='\t', header=None)
-        verbal = verbal.as_matrix()[:,1:]
-        print("Verbal has %d features for %d molecules." % (verbal.shape[1],verbal.shape[0]))
-    '''
-    if 'morgan' in sources:
-        morgan = pd.read_csv('%s/morgan_sim.csv' % DATA, index_col=0)
-        morgan.index.rename('CID',inplace=True)
-        morgan = morgan.loc[CIDs].as_matrix()
-        print("Morgan has %d features for %d molecules." % (morgan.shape[1],morgan.shape[0]))
-    if 'nspdk' in sources:
-        nspdk_dict = make_nspdk_dict(CIDs)
-        nspdk = np.zeros((len(CIDs),len(nspdk_dict)))
-        for j,(feature,facts) in enumerate(nspdk_dict.items()):
-            for CID,value in facts.items():
-                i = CIDs.index(CID)
-                nspdk[i,j] = value
-        print("NSPDK has %d features for %d molecules." % (nspdk.shape[1],nspdk.shape[0]))
-    if 'gramian' in sources:
-        nspdk_CIDs = pd.read_csv('%s/derived/nspdk_cid.csv' % DATA, 
-                                 header=None, dtype='int').as_matrix().squeeze()
-        # These require a large file that is not on GitHub, but can be obtained separately.  
-        nspdk_gramian = pandas.read_table('%s/derived/nspdk_r3_d4_unaug_gramian.mtx' % DATA, delimiter=' ', header=None)
-        nspdk_gramian = nspdk_gramian.as_matrix()
-        CID_indices = [list(nspdk_CIDs).index(CID) for CID in CIDs]
-        nspdk_gramian = nspdk_gramian[CID_indices,:]
-        print("NSPDK Gramian has %d features for %d molecules." % \
-              (nspdk_gramian.shape[1],nspdk_gramian.shape[0]))
-
-    # Add all these new features to the molecular data dict.  
-    mdx = []
-    for i,line in enumerate(molecular_data):
-        CID = int(line[0])
-        if CID in CIDs:
-            index = CIDs.index(CID)
-            if 'episuite' in sources:
-                line += list(episuite[index])
-            if 'morgan' in sources:
-                line += list(morgan[index])
-            if 'nspdk' in sources:
-                line += list(nspdk[index])
-            if 'gramian' in sources:
-                line += list(nspdk_gramian[index])
-            mdx.append(line)
-    print("There are now %d total features." % (len(mdx[0])-1))
-    return molecular_data
-
-def make_nspdk_dict(CIDs):
-    nspdk_CIDs = pd.read_csv('%s/derived/nspdk_cid.csv' % DATA, 
-                                 header=None, dtype='int').as_matrix().squeeze()
-    # Start to load the NSPDK features.  
-    with open('%s/derived/nspdk_r3_d4_unaug.svm' % DATA) as f:
-        nspdk_dict = {}
-        i = 0
-        while True:
-            x = f.readline()
-            if not len(x):
-                break
-            CID = nspdk_CIDs[i]
-            i += 1
-            if CID in CIDs:
-                key_vals = x.split(' ')[1:]
-                for key_val in key_vals:
-                    key,val = key_val.split(':')
-                    if key in nspdk_dict:
-                        nspdk_dict[key][CID] = val
-                    else:
-                        nspdk_dict[key] = {CID:val}
-    # Only include NSPDK features known for more than one of our CIDs
-    nspdk_dict = {key:value for key,value in nspdk_dict.items() if len(value)>1} 
-    return nspdk_dict
 
 def quad_prep(mdx,sets=['training','leaderboard'],dilution=None):
     """Given molecular data, return an array scaled between 0-1, 
