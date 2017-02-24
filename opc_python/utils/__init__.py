@@ -48,13 +48,14 @@ class DoubleSS:
     test set do not contains the same molecule at different dilutions, 
     and also that the higher concentration is tested (or 10^-3 for intensity).  
     """
-    def __init__(self, ss, col, concs):
+    def __init__(self, ss, n_obs, col, concs):
         self.splits = ss
+        self.n_obs = n_obs
         self.col = col
         self.concs = concs
 
     def __iter__(self):
-        for train, test in self.splits:
+        for train, test in self.splits.split(range(self.n_obs)):
             train = np.concatenate((2*train,2*train+1))
             if self.col>0:
                 test = 2*test+1 # The second (higher) concentration of the pair
