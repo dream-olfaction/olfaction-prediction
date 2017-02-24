@@ -1,3 +1,4 @@
+linear_scores_and_features
 *.ipynb_checkpoints*
 
 # Byte-compiled / optimized / DLL files
@@ -57,3 +58,8 @@ docs/_build/
 
 # PyBuilder
 target/
+
+*.npy
+*.eps
+icons
+*.pickle
