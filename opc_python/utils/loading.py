@@ -1,4 +1,4 @@
-import os, sys, csv, ast, time, json
+import os, sys, csv, ast, time, json, pickle
 
 import numpy as np
 import pandas as pd
@@ -224,11 +224,12 @@ def get_molecular_data(sources,CIDs):
     return df
 
 
-def get_CID_dilutions(kind, target_dilution=None):
+def get_CID_dilutions(kind, target_dilution=None, cached=True):
     if type(kind) is list:
         x = []
         for k in kind:
-            x += get_CID_dilutions(k, target_dilution=target_dilution)
+            x += get_CID_dilutions(k, target_dilution=target_dilution, 
+                                   cached=cached)
         return sorted(list(set(x)))
     assert kind in ['training','training-norep','replicated',
                     'leaderboard','testset']
@@ -237,32 +238,36 @@ def get_CID_dilutions(kind, target_dilution=None):
                        leaders of the competition.
         'testset': final testing to determine the winners 
                    of the competition."""
-    if kind in ['training','replicated','leaderboard','testset']:
-        data = []
-        perceptual_data = load_perceptual_data(kind)
-        for i,row in perceptual_data.iterrows():
-            replicate = row.name[3]
-            if replicate or kind != 'replicated':
-                CID = row.name[1]
-                dilution = row.name[2]
-                dilutions = perceptual_data.loc['Intensity'].loc[CID]\
-                                           .index.get_level_values('Dilution')
-                high = dilution == dilutions.max()
-                if target_dilution == 'high' and not high:
-                    continue
-                if target_dilution == 'low' and high:
-                    continue
-                elif target_dilution not in [None,'high','low'] and \
-                     dilution != target_dilution:
-                     continue
-                data.append((CID,dilution))#,high))
-        data = list(set(data))
-    elif kind == 'training-norep':
-        training = set(get_CID_dilutions('training',
-                                         target_dilution=target_dilution))
-        replicated = set(get_CID_dilutions('replicated',
-                                           target_dilution=target_dilution))
-        data = list(training.difference(replicated))
+    if cached:
+        with open(os.path.join(DATA_PATH,'%s.pickle' % kind),'rb') as f:
+            data = pickle.load(f)
+    else:
+        if kind in ['training','replicated','leaderboard','testset']:
+            data = []
+            perceptual_data = load_perceptual_data(kind)
+            for i,row in perceptual_data.iterrows():
+                replicate = row.name[3]
+                if replicate or kind != 'replicated':
+                    CID = row.name[1]
+                    dilution = row.name[2]
+                    dilutions = perceptual_data.loc['Intensity'].loc[CID]\
+                                               .index.get_level_values('Dilution')
+                    high = dilution == dilutions.max()
+                    if target_dilution == 'high' and not high:
+                        continue
+                    if target_dilution == 'low' and high:
+                        continue
+                    elif target_dilution not in [None,'high','low'] and \
+                         dilution != target_dilution:
+                         continue
+                    data.append((CID,dilution))#,high))
+            data = list(set(data))
+        elif kind == 'training-norep':
+            training = set(get_CID_dilutions('training',
+                                             target_dilution=target_dilution))
+            replicated = set(get_CID_dilutions('replicated',
+                                               target_dilution=target_dilution))
+            data = list(training.difference(replicated))
     return sorted(data)
 
 def get_CIDs(kind, target_dilution=None):
@@ -487,3 +492,12 @@ def load_eva_data(save_formatted=False):
                    eva_data)
 
     return (available_cids,eva_data)
+
+def pickle_cid_dilutions():
+    for kind in ['training','leaderboard','testset',
+                 'training-norep','replicated']:
+        print("Loading %s data" % kind)
+        data = get_CID_dilutions(kind, cached=False)
+        print("Pickling %s data" % kind)
+        with open(os.path.join(DATA_PATH,'%s.pickle' % kind),'wb') as f:
+            pickle.dump(data,f)
