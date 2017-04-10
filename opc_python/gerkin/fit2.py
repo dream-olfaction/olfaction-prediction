@@ -12,23 +12,29 @@ from opc_python.gerkin import dream
 
 # Use random forest regression to fit the entire training data set, 
 # one descriptor set at a time.  
-def rfc_final(X,Y_imp,Y_mask,
+def rfc_final(X,Y,Y_imp,
               max_features,min_samples_leaf,max_depth,et,use_mask,trans_weight,
-              trans_params,X_test_int=None,X_test_other=None,Y_test=None,
+              trans_params,X_test=None,Y_test=None,
               n_estimators=100,seed=0,quiet=False):
     
-    if X_test_int is None:
-        X_test_int = X
-    if X_test_other is None:
-        X_test_other = X
+    if X_test is None:
+        X_test = X
     if Y_test is None:
-        Y_test = Y_mask
-
-
-    Y_imp = {'mean':Y_imp.mean(axis=1,level=1),
-             'std':Y_imp.std(axis=1,level=1)}
-    Y_mask = {'mean':Y_mask.mean(axis=1),
-              'std':Y_mask.std(axis=1)}
+        Y_test = Y
+        print(("No test data provided; "
+               "score will indicate in-sample prediction quality"))
+    x_index = X.index.values
+    y_index = Y.index.values
+    extras = set(x_index).difference(y_index)
+    if len(extras):
+        print("Removing %d CID/dilutions that are not in the observed data" \
+              % len(extras))
+        X = X.loc[y_index] # Make sure we are only fitting using the data we have.
+    
+    #Y_imp = {'mean':Y_imp.mean(axis=1,level=1),
+    #         'std':Y_imp.std(axis=1,level=1)}
+    #Y_mask = {'mean':Y_mask.mean(axis=1),
+    #          'std':Y_mask.std(axis=1)}
     descriptors = loading.get_descriptors(format=True)
 
     def rfc_maker(n_estimators=n_estimators,max_features=max_features,
@@ -45,6 +51,7 @@ def rfc_final(X,Y_imp,Y_mask,
                    min_samples_leaf=min_samples_leaf, max_depth=max_depth,
                    n_jobs=-1, random_state=seed, **kwargs)
         
+    print('Fitting...')
     rfcs = {x:{} for x in ('mean','std')}
     for d,descriptor in enumerate(descriptors*2):
         prog(d,2*len(descriptors))
@@ -55,28 +62,26 @@ def rfc_final(X,Y_imp,Y_mask,
                                         max_depth=max_depth[d],
                                         et=et[d])
 
-        if use_mask[d]:
-            rfcs[kind][descriptor].fit(X,Y_mask[kind][descriptor])
-        else:
-            rfcs[kind][descriptor].fit(X,Y_imp[kind][descriptor])
+        y = Y if use_mask[d] else Y_imp
+        y = y.mean(axis=1,level='Descriptor') if kind=='mean' else \
+            y.std(axis=1,level='Descriptor')
+        rfcs[kind][descriptor].fit(X,y[descriptor])
     
+    print('\nPredicting...')
     columns = pd.MultiIndex.from_product([descriptors,('mean','std')],
                                           names=['Descriptor','Moment'])
-    predicted = pd.DataFrame(index=X_test_int.index,columns=columns)
+    x_test = dream.filter_X_dilutions(X_test,'high')
+    CIDs = list(x_test.index)    
+    predicted = pd.DataFrame(index=CIDs,columns=columns)
     for d,descriptor in enumerate(descriptors*2):
-        X_test = X_test_int if descriptor == 'Intensity' else X_test_other
         kind = 'std' if d >= len(descriptors) else 'mean'
-        if et[d] or not np.array_equal(X,X_test_int):
-            # Possibly check in-sample fit because there isn't any alternative.  
-            predicted[(descriptor,kind)] = rfcs[kind][descriptor].predict(X_test)
-        else:
-            try:
-                predicted[(descriptor,kind)] = \
-                    rfcs[kind][descriptor].oob_prediction_
-            except AttributeError:
-                predicted[(descriptor,kind)] = \
-                    rfcs[kind][descriptor].predict(X_test)
-
+        test_conc = -3 if descriptor == 'Intensity' else 'high'
+        x_test = dream.filter_X_dilutions(X_test,test_conc)
+        CIDs = list(x_test.index) # May be fewer for intensity than for others
+        #return predicted[(descriptor,kind)],CIDs,rfcs[kind][descriptor].predict(x_test)
+        predicted[(descriptor,kind)].loc[CIDs] = \
+            rfcs[kind][descriptor].predict(x_test)
+       
     def f_transform(x, k0, k1):
             return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
 
@@ -85,16 +90,18 @@ def rfc_final(X,Y_imp,Y_mask,
         k0,k1 = trans_params[d]
         p_m = predicted[(descriptor,'mean')]
         p_s = predicted[(descriptor,'std')]
-        predicted[(descriptor,kind)] = tw*f_transform(p_m,k0,k1) + (1-tw)*p_s
+        predicted[(descriptor,'std')] = tw*f_transform(p_m,k0,k1) + (1-tw)*p_s
     
     predicted = predicted.stack('Descriptor')
-    observed = Y_test
+    observed = dream.filter_Y_dilutions(Y_test,'gold')
+    #return predicted,observed
     score = scoring.score2(predicted,observed)
     rs = {}
     for kind in ['int','ple','dec']:
         rs[kind] = {}
         for moment in ['mean','std']:
-            rs[kind][moment] = scoring.r2(kind,moment,predicted,observed)
+            rs[kind][moment] = scoring.r2(kind,moment,predicted,observed,
+                                          quiet=True)
     
     if not quiet:
         print("For subchallenge 2:")

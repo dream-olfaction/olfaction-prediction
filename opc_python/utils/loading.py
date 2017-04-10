@@ -239,7 +239,12 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
         'testset': final testing to determine the winners 
                    of the competition."""
     if cached:
-        with open(os.path.join(DATA_PATH,'%s.pickle' % kind),'rb') as f:
+        file_path = os.path.join(DATA_PATH,'%s.pickle' % kind)
+        if not os.path.isfile(file_path):
+            print(("Determining CIDs and dilutions the long way one time."
+                   "Results will be stored for faster retrieval in the future"))
+            pickle_cid_dilutions()
+        with open(file_path,'rb') as f:
             data = pickle.load(f)
     else:
         if kind in ['training','replicated','leaderboard','testset']:
@@ -261,6 +266,8 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
                          dilution != target_dilution:
                          continue
                     data.append((CID,dilution))#,high))
+                    if kind in ['leaderboard','testset']:
+                        data.append((CID,-3)) # Add the Intensity dilution.
             data = list(set(data))
         elif kind == 'training-norep':
             training = set(get_CID_dilutions('training',
@@ -268,12 +275,15 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
             replicated = set(get_CID_dilutions('replicated',
                                                target_dilution=target_dilution))
             data = list(training.difference(replicated))
-    return sorted(data)
+    data = sorted(data)
+    return data
+
 
 def get_CIDs(kind, target_dilution=None):
     CID_dilutions = get_CID_dilutions(kind, target_dilution=target_dilution)
     CIDs = [x[0] for x in CID_dilutions]
     return sorted(list(set(CIDs)))
+
 
 def get_CID_rank(kind,dilution=-3):
     """Returns CID dictionary with 1 if -3 dilution is highest, 
@@ -293,6 +303,7 @@ def get_CID_rank(kind,dilution=-3):
         else:
             result[CID] = -1
     return result
+
 
 def dilution2magnitude(dilution):
     denom = dilution.replace('"','').replace("'","")\
@@ -358,103 +369,28 @@ def open_prediction_file(subchallenge,kind,name):
 def write_prediction_files(Y,kind,subchallenge,name):
     f,writer = open_prediction_file(subchallenge,kind,name=name)
     CIDs = get_CIDs(kind)
-    perceptual_headers, _ = load_perceptual_data('training')
+    descriptors_short = get_descriptors(format=True)
+    descriptors_long = get_descriptors()
 
     # Subchallenge 1.
     if subchallenge == 1:
         writer.writerow(["#oID","individual","descriptor","value"])
         for subject in range(1,NUM_SUBJECTS+1):
-            for j in range(NUM_DESCRIPTORS):
-                for i,CID in enumerate(CIDs):
-                    descriptor = perceptual_headers[-NUM_DESCRIPTORS:][j]
-                    value = Y['subject'][subject][i,j].round(3)
-                    writer.writerow([CID,subject,descriptor,value])
+            for d_short,d_long in zip(descriptors_short,descriptors_long):
+                for CID in CIDs:
+                    value = Y[subject][d_short].loc[CID].round(3)
+                    writer.writerow([CID,subject,d_long,value])
         f.close()
     
     # Subchallenge 2.
     elif subchallenge == 2:
         writer.writerow(["#oID","descriptor","value","std"])
-        for j in range(NUM_DESCRIPTORS):
-            for i,CID in enumerate(CIDs):
-                descriptor = perceptual_headers[-NUM_DESCRIPTORS:][j]
-                value = Y['mean_std'][i,j].round(3)
-                std = Y['mean_std'][i,j+NUM_DESCRIPTORS].round(3)
-                writer.writerow([CID,descriptor,value,std])
+        for d_short,d_long in zip(descriptors_short,descriptors_long):
+            for CID in CIDs:
+                value = Y['mean'][d_short].loc[CID].round(3).round(3)
+                std = Y['std'][d_short].loc[CID].round(3)
+                writer.writerow([CID,d_long,value,std])
         f.close()
-
-def make_prediction_files(rfcs,X_int,X_other,target,subchallenge,Y_test=None,
-                          intensity_mask=None,write=True,
-                          trans_weight=np.zeros(21),
-                          trans_params=np.ones((21,2)),regularize=[0.8],
-                          name=None):
-    if len(regularize)==1 and type(regularize)==list:
-        regularize = regularize*21
-    if name is None:
-        name = '%d' % time.time()
-
-    n_obs = X_other.shape[0]
-    descriptors = get_descriptors(format=True)
-    n_subjects = 49
-    kinds = ['int','ple','dec']
-    moments = ['mean','std']    
-    
-    if subchallenge == 1:
-        Y = pd.Panel(items=range(1,n_subjects+1),major_axis=X_other.index,
-                     minor_axis=pd.Series(descriptors,name='Descriptor'))
-        for col,descriptor in enumerate(descriptors):
-            X = X_int if descriptor=='Intensity' else X_other
-            if descriptor!='Intensity' or intensity_mask is None:
-                mol = X_other.index
-            else:
-                mol = intensity_mask
-            for subject in range(1,n_subjects+1):
-                Y[subject][descriptor].loc[mol] = \
-                    rfcs[subject][descriptor].predict(X)
-        
-        # Regularize
-        Y_mean = Y.mean(axis=0)
-        for subject in range(1,n_subjects+1):
-            Y[subject] = regularize[col]*Y_mean \
-                       + (1-regularize[col])*Y[subject]
-
-        if Y_test:
-            predicted = Y.to_frame()
-            observed = Y_test['Subject']
-            #observed = dream.filter_Y_dilutions(Y_test,'gold')['Subject']
-            print(scoring.score_summary(predicted,observed))
-            
-    if subchallenge == 2:
-        def f_transform(x, k0, k1):
-            return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
-        
-        Y = pd.Panel(items=moments,major_axis=X_other.index,
-                     minor_axis=pd.Series(descriptors,name='Descriptor'))
-
-        for col,descriptor in enumerate(descriptors):
-            X = X_int if descriptor == 'Intensity' else X_other
-            if descriptor!='Intensity' or intensity_mask is None:
-                mol = X_other.index
-            else:
-                mol = intensity_mask
-            for moment in moments:
-                Y[moment][descriptor].loc[mol] = \
-                    rfcs[moment][descriptor].predict(X)
-        
-        
-        for col,descriptor in enumerate(descriptors):
-            tw = trans_weight[col]
-            k0,k1 = trans_params[col]
-            y_m = Y['mean'][descriptor]
-            y_s = Y['std'][descriptor]
-            Y['std'][descriptor] = tw*f_transform(y_m,k0,k1) + (1-tw)*y_s
-        
-        if Y_test is not None:
-            print(scoring.score_summary2(Y,Y_test,mask=True))
-            
-    if write:
-        write_prediction_files(Y,target,subchallenge,name)
-        print('Wrote to file with suffix "%s"' % name)
-    return Y
     
 
 def load_eva_data(save_formatted=False):
