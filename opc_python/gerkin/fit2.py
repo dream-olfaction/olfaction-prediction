@@ -326,7 +326,7 @@ def compute_linear_feature_ranks_cv(X,Y,n_resampling=10,n_splits=25):
             #print(observed.shape)
             rl.fit(X.loc[train],observed)
             lin_ranked[j,d,:] = np.argsort(rl.all_scores_.ravel())[::-1]
-    p.animate(None,msg='Finished') 
+    p.animate(None,'Finished') 
     return lin_ranked
 
 
@@ -447,5 +447,5 @@ def feature_sweep(X,Y,n_estimators=50,n_splits=25,
                     predicted = est.predict(X.loc[test].ix[:,import_ranks[:n_feat]]) 
                 # Compute the correlation coefficient.
                 rs[d,i,j] = np.corrcoef(predicted,observed.loc[test])[1,0] 
-    p.animate(None,msg='Finished') 
+    p.animate(None,'Finished') 
     return rs
