@@ -7,7 +7,7 @@ from sklearn.model_selection import ShuffleSplit,cross_val_score
 from sklearn.linear_model import RandomizedLasso,Ridge
 
 from opc_python import * # Import constants.  
-from opc_python.utils import scoring,prog,loading
+from opc_python.utils import scoring,prog,ProgressBar,loading,DoubleSS,DreamGroupShuffleSplit
 from opc_python.gerkin import dream
 
 # Use random forest regression to fit the entire training data set, 
@@ -299,26 +299,34 @@ def compute_linear_feature_ranks(X,Y,n_resampling=10):
 
 def compute_linear_feature_ranks_cv(X,Y,n_resampling=10,n_splits=25):
     warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
     
     # Matrix to store the score rankings.  
-    lin_ranked = np.zeros((n_splits,21,X.shape[1])).astype(int) 
-    n_molecules = int(X.shape[0]/2) # Expects an array with two dilutions
-                                    # for each molecule
-    shuffle_split = ShuffleSplit(n_splits,test_size=0.17,
-                                 random_state=0) # This will produce the splits 
-                                                 # in train/test_big that I 
-                                                 # put on GitHub
+    Y = Y['Subject'].mean(axis=1).unstack('Descriptor') # Mean across subjects
+    X = X.drop('mean_dilution',1) # Don't use mean dilution to avoid leak
+    common_index = Y.index.intersection(X.index)
+    X = X.loc[common_index] # Only use common CIDs and dilutions
+    Y = Y.loc[common_index] # Only use common CIDs and dilutions
+    cv = DreamGroupShuffleSplit(n_splits,test_size=0.17,random_state=0) 
+    CID_index = X.index.get_level_values('CID')
+    descriptors = loading.get_descriptors(format=True)
     rl = RandomizedLasso(alpha=0.025,selection_threshold=0.025,
                          n_resampling=n_resampling,random_state=25,n_jobs=1)
-    for col in range(21):
+    n_descriptors = len(descriptors)
+    n_features = X.shape[1]
+    lin_ranked = np.zeros((n_splits,n_descriptors,n_features)).astype(int) 
+    p = ProgressBar(n_descriptors*n_splits)
+    for d,desc in enumerate(descriptors):
         # Produce the correct train and test indices.  
-        cv = utils.DoubleSS(shuffle_split, n_molecules, col, X[:,-1]) 
-        for j,(train,test) in enumerate(cv):
-            print("Computing feature ranks for descriptor #%d, split #%d" \
-                  % (col,j))
-            observed = Y[train,col]
-            rl.fit(X[train,:],observed)
-            lin_ranked[j,col,:] = np.argsort(rl.all_scores_.ravel())[::-1]
+        for j,(train,test) in enumerate(cv.split(X,CID_index,desc)):
+            p.animate(d*n_splits+j,"Computing feature ranks for descriptor #%d, split #%d" \
+                  % (d,j))
+            observed = Y.loc[train][desc]
+            #print(X.loc[train].shape)
+            #print(observed.shape)
+            rl.fit(X.loc[train],observed)
+            lin_ranked[j,d,:] = np.argsort(rl.all_scores_.ravel())[::-1]
+    p.animate(None,msg='Finished') 
     return lin_ranked
 
 
@@ -363,39 +371,42 @@ def master_cv(X,Y,n_estimators=50,n_splits=25,model='rf',
 
 
 def feature_sweep(X,Y,n_estimators=50,n_splits=25,
-                  n_features=[1,2,3,4,5,10,33,100,333,1000,3333,10000],
-                  model='rf',wrong_split=False,max_features='auto',
+                  n_features_list=[1,2,3,4,5,10,33,100,333,1000,3333,10000],
+                  model='rf',rfe=False,wrong_split=False,max_features='auto',
                   max_depth=None,min_samples_leaf=1,alpha=1.0,
                   lin_ranked=None,random_state=0):
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
     if model == 'ridge' and lin_ranked is None:
         raise Exception('Must provided "lin_ranked" to use the linear model')
-    rs = np.ma.zeros((21,len(n_features),n_splits)) # Empty matrix to store correlations.  
-    n_molecules = int(X_all.shape[0]/2) # Number of molecules.  
-    shuffle_split = ShuffleSplit(n_molecules,n_splits,test_size=0.17,
-                                 random_state=0) 
-                    # This will produce the splits in train/test_big that I 
-                    # put on GitHub
-    
-    for col in range(0,21): # For each descriptor.  
-        observed = Y[:,col] # Perceptual data for this descriptor.  
-        n_features_ = list(np.array(n_features)+(col==0))
+    Y = Y['Subject'].mean(axis=1).unstack('Descriptor') # Mean across subjects
+    X = X.drop('mean_dilution',1) # Don't use mean dilution to avoid leak
+    X = X.loc[Y.index] # Only use CIDs and dilutions with perceptual data
+    rs = np.ma.zeros((21,len(n_features_list),n_splits)) # Empty matrix to store correlations.  
+    cv = DreamGroupShuffleSplit(n_splits,test_size=0.17,random_state=0) 
+    CID_index = X.index.get_level_values('CID')
+    descriptors = loading.get_descriptors(format=True)
+    n_descriptors = len(descriptors)
+
+    p = ProgressBar(n_descriptors*n_splits)
+    for d,desc in enumerate(descriptors): # For each descriptor.  
+        observed = Y[desc] # Perceptual data for this descriptor.  
+        n_features_list_ = list(np.array(n_features_list)+(desc=='Intensity'))
         # Produce the correct train and test indices.  
-        cv = DoubleSS(shuffle_split, n_molecules, col, X_all[:,-1]) 
-        for j,(train,test) in enumerate(cv):
-            print('Fitting descriptor #%d, split #%d' % (col,j))
+        for j,(train,test) in enumerate(cv.split(X,CID_index,desc)):
+            p.animate(d*n_splits+j,'Fitting descriptor #%d, split #%d' % (d,j))
             if model == 'rf': # If the model is random forest regression.  
-                if col==0:
+                if desc=='Intensity':
                     est = ExtraTreesRegressor(n_estimators=n_estimators,
-                                              max_features=max_features,
-                                              max_depth=max_depth,
-                                              min_samples_leaf=min_samples_leaf,
+                                              max_features=max_features[d],
+                                              max_depth=max_depth[d],
+                                              min_samples_leaf=min_samples_leaf[d],
                                               n_jobs=8,
                                               random_state=random_state)
                 else:
                     est = RandomForestRegressor(n_estimators=n_estimators,
-                                                max_features=max_features,
-                                                max_depth=max_depth,
-                                            min_samples_leaf=min_samples_leaf,
+                                                max_features=max_features[d],
+                                                max_depth=max_depth[d],
+                                            min_samples_leaf=min_samples_leaf[d],
                                                 oob_score=False,n_jobs=8,
                                                 random_state=random_state)
             elif model == 'ridge': # If the model is ridge regression. 
@@ -403,20 +414,20 @@ def feature_sweep(X,Y,n_estimators=50,n_splits=25,
                             copy_X=True,max_iter=None,tol=0.001,solver='auto',
                             random_state=random_state)
             if rfe:  
-                rfe = RFE(estimator=est, step=n_features_, 
+                rfe = RFE(estimator=est, step=n_features_list_, 
                           n_features_to_select=1)
-                rfe.fit(X[train,:],observed[train])    
+                rfe.fit(X.loc[train],observed.loc[train])    
             else:  
                 # Fit the model on the training data.  
-                est.fit(X[train,:],observed[train]) 
+                est.fit(X.loc[train].values,observed.loc[train].values) 
                 if model == 'rf':
                     # Use feature importances to get ranks.
                     import_ranks = np.argsort(est.feature_importances_)[::-1]   
                 elif model == 'ridge':
                     # Use the pre-computed ranks.
-                    import_ranks = lin_ranked[int(j+wrong_split)%n_splits,col,:] 
-            for i,n_feat in enumerate(n_features_):
-                if col==0:
+                    import_ranks = lin_ranked[int(j+wrong_split)%n_splits,d,:] 
+            for i,n_feat in enumerate(n_features_list_):
+                if desc=='Intensity':
                     # Add one for intensity since negLogD is worthless when
                     # all concentrations are 1/1000. 
                     n_feat += 1  
@@ -425,15 +436,16 @@ def feature_sweep(X,Y,n_estimators=50,n_splits=25,
                     if n_feat < est.max_features:
                         est.max_features = n_feat
                 if rfe:
-                    est.fit(X[train,:][:,rfe.ranking_<=(1+i)],observed[train])
-                    predicted = est.predict(X[test,:][:,rfe.ranking_<=(1+i)])
+                    est.fit(X.loc[train].ix[:,rfe.ranking_<=(1+i)],observed.loc[train])
+                    predicted = est.predict(X.loc[test].ix[:,rfe.ranking_<=(1+i)])
                 else:
                     #est.max_features = None
                     # Fit the model on the training data
                     # with 'max_features' features.
-                    est.fit(X[train,:][:,import_ranks[:n_feat]],observed[train])
+                    est.fit(X.loc[train].ix[:,import_ranks[:n_feat]],observed.loc[train])
                     # Predict the test data.  
-                    predicted = est.predict(X[test,:][:,import_ranks[:n_feat]]) 
+                    predicted = est.predict(X.loc[test].ix[:,import_ranks[:n_feat]]) 
                 # Compute the correlation coefficient.
-                rs[col,i,j] = np.corrcoef(predicted,observed[test])[1,0]  
+                rs[d,i,j] = np.corrcoef(predicted,observed.loc[test])[1,0] 
+    p.animate(None,msg='Finished') 
     return rs

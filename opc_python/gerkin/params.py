@@ -91,7 +91,7 @@ def get_trans_params(Y, descriptors, plot=True):
     def sse(x, mean, stdev):
         predicted_stdev = f_transformation(mean, k0=x[0], k1=x[1])
         sse = np.sum((predicted_stdev - stdev)**2)
-        return sse
+        return sse    
 
     if plot:
         matplotlib.rcParams['font.size'] = 12

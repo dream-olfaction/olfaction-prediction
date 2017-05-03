@@ -10,7 +10,6 @@ from opc_python.utils import prog,scoring,loading
 def rfc_final(X,Y,
               max_features,min_samples_leaf,max_depth,use_et,
               regularize=np.ones(21)*0.8,n_estimators=100,seed=0):
-    
     descriptors = loading.get_descriptors(format=True)
     n_subjects = 49
     n_obs = X.shape[0]
@@ -32,43 +31,40 @@ def rfc_final(X,Y,
     for d,descriptor in enumerate(descriptors):
         for subject in range(1,n_subjects+1):
             rfcs[subject][descriptor] = rfc_maker(n_estimators=n_estimators,
-                                max_features=max_features[col],
-                                min_samples_leaf=min_samples_leaf[col],
-                                max_depth=max_depth[col],
-                                use_et=use_et[col])
+                                max_features=max_features[d],
+                                min_samples_leaf=min_samples_leaf[d],
+                                max_depth=max_depth[d],
+                                use_et=use_et[d])
 
     for subject in range(1,n_subjects+1):
         prog(subject,n_subjects+1)
-        from time import gmtime, strftime
         for d,descriptor in enumerate(descriptors):
             rfcs[subject][descriptor].fit(X,Y[subject][descriptor])
     
-    predicted = np.zeros((n_obs,len(descriptors),n_subjects))
-    for col,descriptor in enumerate(descriptors):
+    predicted = Y.copy()
+    for d,descriptor in enumerate(descriptors):
         for subject in range(1,n_subjects+1):
-            if use_et[col]:
+            if use_et[d]:
                 # Check in-sample fit because there isn't any alternative. 
-                predicted[:,col,subject-1] = \
+                predicted[subject][descriptor] = \
                     rfcs[subject][descriptor].predict(X)
             else:
-                predicted[:,col,subject-1] = \
+                predicted[subject,descriptor] = \
                     rfcs[subject][descriptor].oob_prediction_
 
     # Regularize:  
-    predicted_mean = predicted.mean(axis=2,keepdims=True)
-    predicted_reg = predicted.copy()
+    predicted_mean = predicted.stack().mean(axis=1).unstack('Descriptor')
     for d,descriptor in enumerate(descriptors):
-        predicted_reg[:,d,:] = regularize[d]*predicted_mean[:,d,:] \
-                               + (1-regularize[d])*predicted[:,d,:]
-    predicted = predicted_reg
+        for subject in range(1,n_subjects+1):
+            predicted[subject][descriptor] = \
+                regularize[d]*predicted_mean[descriptor] \
+              + (1-regularize[d])*predicted[subject][descriptor]
     
-    observed = predicted.copy()
-    for subject in range(1,n_subjects+1):
-        observed[:,:,subject-1] = Y[subject]
+    observed = Y.copy()
     score = scoring.score(predicted,observed)
     rs = {}
     predictions = {}
-    print("For subchallenge 1:")
+    print("Prediction for subchallenge 1, based on OOB (ignore Intensity):")
     print("\tScore = %.2f" % score)
     for kind in ['int','ple','dec']:
         rs[kind] = scoring.r(kind,predicted,observed)

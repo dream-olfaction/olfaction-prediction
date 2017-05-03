@@ -223,24 +223,25 @@ def normalize_X(X,means=None,stds=None):#,logs=None):
     X = X.div(stds,axis=1)
     return X,means,stds
 
-def quad_prep(mdx,CID_dilutions,dilution=None):
+def quad_prep(features,CID_dilutions,dilution=None):
     """Given molecular data, return an array scaled between 0-1, 
     along with the squared versions of the same variables.  
     Put concentration information at the end of the array without
     squaring it.   
     """
-    X,_,_,_,_,_ = make_X(mdx,CID_dilutions,target_dilution=dilution,
-                              raw=True,quiet=True)
+    X = make_X(features,CID_dilutions,target_dilution=dilution,
+                              raw=True,quiet=True)[0]
     X = X.fillna(0) 
-    X_scaled = X.copy()
-    X_scaled[:] = MinMaxScaler().fit_transform(X)
-    X_scaled.drop(['dilution','mean_dilution'],1,inplace=True)
-    X_scaled_sq = pd.concat((X_scaled,X_scaled**2,
-                             X[['dilution','mean_dilution']]),1)
+    X1 = X.copy()
+    X1[:] = MinMaxScaler().fit_transform(X)
+    X1.drop(['dilution','mean_dilution'],1,inplace=True)
+    X2 = X1**2
+    X2.columns = [(name[0],'%s_2'%name[1]) for name in X2.columns]
+    result = pd.concat((X1,X2,X[['dilution','mean_dilution']]),1)
     print("The X matrix now has shape (%dx%d) molecules by " \
-            % X_scaled_sq.shape + "non-NaN good molecular descriptors")
+            % result.shape + "non-NaN good molecular descriptors")
     
-    return X_scaled_sq
+    return result
 
 ##############################
 # Producing prediction files #
