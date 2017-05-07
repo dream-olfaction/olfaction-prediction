@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
@@ -5,13 +7,15 @@ from sklearn.model_selection import ShuffleSplit,cross_val_score
 from sklearn.linear_model import Lasso,Ridge
 
 from opc_python import * # Import constants.  
-from opc_python.utils import prog,scoring,loading
+from opc_python.utils import prog,ProgressBar,scoring,loading
 
 def rfc_final(X,Y,
               max_features,min_samples_leaf,max_depth,use_et,
               regularize=np.ones(21)*0.8,n_estimators=100,seed=0):
+    warnings.filterwarnings("ignore", category=UserWarning)
     descriptors = loading.get_descriptors(format=True)
-    n_subjects = 49
+    n_descriptors = len(descriptors)
+    n_subjects = Y.stack('Descriptor').shape[1]
     n_obs = X.shape[0]
     def rfc_maker(n_estimators=n_estimators, max_features=max_features,
                   min_samples_leaf=min_samples_leaf, max_depth=max_depth,
@@ -36,10 +40,13 @@ def rfc_final(X,Y,
                                 max_depth=max_depth[d],
                                 use_et=use_et[d])
 
-    for subject in range(1,n_subjects+1):
-        prog(subject,n_subjects+1)
+    p = ProgressBar(n_subjects*n_descriptors)
+    for s,subject in enumerate(range(1,n_subjects+1)):
         for d,descriptor in enumerate(descriptors):
+            p.animate(d+n_descriptors*s,
+                      "Subject %d, Descriptor %d" % (subject,d))
             rfcs[subject][descriptor].fit(X,Y[subject][descriptor])
+    p.animate(None,"Finished")
     
     predicted = Y.copy()
     for d,descriptor in enumerate(descriptors):
@@ -64,7 +71,7 @@ def rfc_final(X,Y,
     score = scoring.score(predicted,observed)
     rs = {}
     predictions = {}
-    print("Prediction for subchallenge 1, based on OOB (ignore Intensity):")
+    print("Prediction for subchallenge 1, based on OOB:")
     print("\tScore = %.2f" % score)
     for kind in ['int','ple','dec']:
         rs[kind] = scoring.r(kind,predicted,observed)

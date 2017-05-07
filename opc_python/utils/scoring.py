@@ -30,24 +30,21 @@ def r(kind,predicted,observed,n_subjects=49,mask=True):
             o = o.unstack('Descriptor')
         except KeyError:
             pass
-        r += r2(kind,None,p,o,mask=mask)
+        r += r2(kind,None,p,o)
     r /= n_subjects
     return r
 
-def score(predicted,observed,n_subjects=49):
-    """Final score for sub-challenge 1."""
-    score = z('int',predicted,observed,n_subjects=n_subjects) \
-          + z('ple',predicted,observed,n_subjects=n_subjects) \
-          + z('dec',predicted,observed,n_subjects=n_subjects)
-    return score/3.0
-
-def score_summary(predicted,observed,mask=True):
-    score_ = score(predicted,observed)
+def score(predicted,observed,n_subjects=49,mask=True,quiet=False):
     r_int = r('int',predicted,observed,mask=mask)
     r_ple = r('ple',predicted,observed,mask=mask)
     r_dec = r('dec',predicted,observed,mask=mask)
-    return 'Score: %3f; rs = %.3f,%.3f,%.3f' % \
-                (score_, r_int, r_ple, r_dec)
+    score_ = (z('int',predicted,observed,n_subjects=n_subjects) \
+          + z('ple',predicted,observed,n_subjects=n_subjects) \
+          + z('dec',predicted,observed,n_subjects=n_subjects))/3
+    if not quiet:
+        print('Score: %3f; rs = %.3f,%.3f,%.3f' % \
+                (score_, r_int, r_ple, r_dec))
+    return score_
 
 def rs2score(r_int,r_ple,r_dec):
     z_int = r_int/SIGMAS['int']
@@ -96,6 +93,14 @@ def r2(kind,moment,predicted,observed,quiet=False):
     elif moment is None:
         p = predicted
         o = observed
+        try:
+            p = p.unstack('Descriptor')
+        except:
+            pass
+        try:
+            o = o.unstack('Descriptor')
+        except:
+            pass
     else:
         raise ValueError('No such moment: %s' % moment)
 
@@ -140,6 +145,8 @@ def r2(kind,moment,predicted,observed,quiet=False):
         p_ = p[d]
         o_ = o[d]
         r_ = p_.corr(o_)
+        #if kind == 'int':
+        #    print(o)
         if ('%f' % r_) != 'nan':
             r += r_
         denom += 1
@@ -165,9 +172,15 @@ def score2(predicted,observed,quiet=False):
         r_int_std = r2('int','std',predicted,observed,quiet=True)
         r_ple_std = r2('ple','std',predicted,observed,quiet=True)
         r_dec_std = r2('dec','std',predicted,observed,quiet=True)
-        print('Score: %3f; rs = %.3f,%.3f,%.3f,%.3f,%.3f,%.3f' % \
-                (score, r_int_mean, r_ple_mean, r_dec_mean, \
-                        r_int_std,r_ple_std,r_dec_std))
+        print(("Subchallenge 2 Score: %.3f\n"
+               "\tr_int_mean = %.3f\n"
+               "\tr_ple_mean = %.3f\n"
+               "\tr_dec_mean = %.3f\n"
+               "\tr_int_std = %.3f\n"
+               "\tr_ple_std = %.3f\n"
+               "\tr_dec_std = %.3f\n"
+               % (score, r_int_mean, r_ple_mean, r_dec_mean, 
+                  r_int_std,r_ple_std,r_dec_std)))
     return score
 
 def rs2score2(rs):

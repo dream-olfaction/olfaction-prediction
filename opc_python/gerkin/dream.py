@@ -7,7 +7,7 @@ from collections import OrderedDict
 from sklearn.preprocessing import Imputer,MinMaxScaler
 
 from opc_python import * # Import constants.  
-from opc_python.utils import loading, scoring
+from opc_python.utils import loading, scoring, ProgressBar
 DATA = '../../data/'
 
 #############################
@@ -20,6 +20,8 @@ KINDS = ['training','training-norep','replicated',
 def filter_Y_dilutions(df, concentration, keep_replicates=False):
     """Select only one dilution ('high' or 'low') and the mean across
     replicates for a given molecule."""
+    if 'Dilution' not in df.index.names:
+        return df
     assert concentration in ['high','low','gold','all'] or type(concentration) is int
     try:
         df = df.stack('Descriptor')
@@ -264,14 +266,17 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
     
     n_obs = X_other.shape[0]
     descriptors = loading.get_descriptors(format=True)
+    n_descriptors = len(descriptors)
     n_subjects = 49
     kinds = ['int','ple','dec']
-    moments = ['mean','std']    
+    moments = ['mean','std']   
     
+    p = ProgressBar(n_descriptors)
     if subchallenge == 1:
         Y = pd.Panel(items=range(1,n_subjects+1),major_axis=X_other.index,
                      minor_axis=pd.Series(descriptors,name='Descriptor'))
-        for col,descriptor in enumerate(descriptors):
+        for d,descriptor in enumerate(descriptors):
+            p.animate(d,descriptor)
             X = X_int if descriptor=='Intensity' else X_other
             if descriptor!='Intensity' or intensity_mask is None:
                 mol = X_other.index
@@ -280,17 +285,18 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
             for subject in range(1,n_subjects+1):
                 Y[subject][descriptor].loc[mol] = \
                     rfcs[subject][descriptor].predict(X)
+        p.animate(None,"Predictions computed")
         
         # Regularize
         Y_mean = Y.mean(axis=0)
         for subject in range(1,n_subjects+1):
-            Y[subject] = regularize[col]*Y_mean \
-                       + (1-regularize[col])*Y[subject]
+            Y[subject] = regularize[d]*Y_mean \
+                       + (1-regularize[d])*Y[subject]
 
         if Y_test is not None:
             predicted = Y.to_frame().unstack('Descriptor')
             observed = Y_test
-            print(scoring.score_summary(predicted,observed))
+            scoring.score(predicted,observed)
             
     if subchallenge == 2:
         def f_transform(x, k0, k1):
@@ -299,7 +305,8 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
         Y = pd.Panel(items=moments,major_axis=X_other.index,
                      minor_axis=pd.Series(descriptors,name='Descriptor'))
 
-        for col,descriptor in enumerate(descriptors):
+        for d,descriptor in enumerate(descriptors):
+            p.animate(d,descriptor)
             X = X_int if descriptor == 'Intensity' else X_other
             if descriptor!='Intensity' or intensity_mask is None:
                 mol = X_other.index
@@ -308,7 +315,7 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
             for moment in moments:
                 Y[moment][descriptor].loc[mol] = \
                     rfcs[moment][descriptor].predict(X)
-        
+        p.animate(None,"Predictions computed")        
         
         for col,descriptor in enumerate(descriptors):
             tw = trans_weight[col]
@@ -320,7 +327,6 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
         if Y_test is not None:
             predicted = Y.to_frame().unstack('Descriptor')
             observed = Y_test
-            #return predicted
             scoring.score2(predicted,observed)
             
     if write:

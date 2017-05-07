@@ -44,13 +44,14 @@ class ProgressBar:
         self._update(0, '')
 
     def animate(self, k, status=None):
-        if k is None:
-            k = self.n
+        k_ = self.n if k is None else k
         if status is None:
             status = self.status
         sys.stdout.write('\r%s' % (' '*self.last_length))
-        self._update(k, status)
+        self._update(k_, status)
         sys.stdout.write('\r%s' % self.text)
+        if k is None:
+            sys.stdout.write('\n')
         sys.stdout.flush()
         
     def _update(self, k, status):

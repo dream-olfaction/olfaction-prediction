@@ -40,6 +40,7 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
                 line[6:] = [float('NaN') if x=='NaN' else float(x) \
                             for x in line[6:]]
                 line[0] = CID = int(line[0])
+                #print(line)
                 dilution = line[4]
                 mag = dilution2magnitude(dilution)
                 CID_dilution = (CID,mag)
@@ -50,7 +51,19 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
                     if CID_dilution in with_replicates:
                         data.append(line)
                 else:
-                    data.append(line)
+                    if kind in ['leaderboard','testset']:
+                        rel_intensity = 'low' if line[3]=='high' else 'high'
+                        line[3] = rel_intensity
+                        intensity = line[6]
+                        line[6] = float('NaN')
+                        data.append(line.copy())
+                        line[6] = intensity
+                        line[7:] = [float('NaN') for x in line[7:]]
+                        line[3] = 'low' if rel_intensity=='high' else 'high'
+                        line[4] = "'1/1,000'"
+                        data.append(line)
+                    else:
+                        data.append(line)
             else:
                 headers = line
                 if just_headers:

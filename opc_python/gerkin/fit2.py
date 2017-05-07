@@ -50,11 +50,12 @@ def rfc_final(X,Y,Y_imp,
         return kls(n_estimators=n_estimators, max_features=max_features,
                    min_samples_leaf=min_samples_leaf, max_depth=max_depth,
                    n_jobs=-1, random_state=seed, **kwargs)
-        
-    print('Fitting...')
+       
+    n_descriptors = len(descriptors) 
+    p = ProgressBar(n_descriptors)
     rfcs = {x:{} for x in ('mean','std')}
     for d,descriptor in enumerate(descriptors*2):
-        prog(d,2*len(descriptors))
+        p.animate(d,"Fitting %s" % descriptor)
         kind = 'std' if d >= len(descriptors) else 'mean'
         rfcs[kind][descriptor] = rfc_maker(n_estimators=n_estimators,
                                         max_features=max_features[d],
@@ -65,9 +66,13 @@ def rfc_final(X,Y,Y_imp,
         y = Y if use_mask[d] else Y_imp
         y = y.mean(axis=1,level='Descriptor') if kind=='mean' else \
             y.std(axis=1,level='Descriptor')
-        rfcs[kind][descriptor].fit(X,y[descriptor])
+        y = y[descriptor]
+        is_nan = np.isnan(y)
+        y = y.loc[is_nan == False]
+        x = X.loc[is_nan == False]
+        rfcs[kind][descriptor].fit(x,y)
+    p.animate(None,"All descriptors models fit")
     
-    print('\nPredicting...')
     columns = pd.MultiIndex.from_product([descriptors,('mean','std')],
                                           names=['Descriptor','Moment'])
     x_test = dream.filter_X_dilutions(X_test,'high')
@@ -94,23 +99,8 @@ def rfc_final(X,Y,Y_imp,
     
     predicted = predicted.stack('Descriptor')
     observed = dream.filter_Y_dilutions(Y_test,'gold')
-    #return predicted,observed
-    score = scoring.score2(predicted,observed)
-    rs = {}
-    for kind in ['int','ple','dec']:
-        rs[kind] = {}
-        for moment in ['mean','std']:
-            rs[kind][moment] = scoring.r2(kind,moment,predicted,observed,
-                                          quiet=True)
-    
-    if not quiet:
-        print("For subchallenge 2:")
-        print("\tScore = %.2f" % score)
-        for kind in ['int','ple','dec']:
-            for moment in ['mean','std']: 
-                print("\t%s_%s = %.3f" % (kind,moment,rs[kind][moment]))
-        
-    return (rfcs,score,rs)
+    score = scoring.score2(predicted,observed,quiet=quiet)
+    return (rfcs,score)
 
 def rfc_(X_train,Y_train,X_test_int,X_test_other,Y_test,
          max_features=1500,n_estimators=1000,max_depth=None,min_samples_leaf=1):
