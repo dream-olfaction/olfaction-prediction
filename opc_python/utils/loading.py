@@ -284,9 +284,9 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
             data = list(set(data))
         elif kind == 'training-norep':
             training = set(get_CID_dilutions('training',
-                                             target_dilution=target_dilution))
+                                             target_dilution=target_dilution, cached=cached))
             replicated = set(get_CID_dilutions('replicated',
-                                               target_dilution=target_dilution))
+                                               target_dilution=target_dilution, cached=cached))
             data = list(training.difference(replicated))
     data = sorted(data)
     return data
