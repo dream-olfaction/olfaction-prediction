@@ -52,11 +52,11 @@ def rfc_final(X,Y,Y_imp,
                    n_jobs=-1, random_state=seed, **kwargs)
        
     n_descriptors = len(descriptors) 
-    p = ProgressBar(n_descriptors)
+    p = ProgressBar(n_descriptors * 2)
     rfcs = {x:{} for x in ('mean','std')}
     for d,descriptor in enumerate(descriptors*2):
-        p.animate(d,"Fitting %s" % descriptor)
         kind = 'std' if d >= len(descriptors) else 'mean'
+        p.animate(d,"Fitting %s %s" % (descriptor, kind))
         rfcs[kind][descriptor] = rfc_maker(n_estimators=n_estimators,
                                         max_features=max_features[d],
                                         min_samples_leaf=min_samples_leaf[d],
