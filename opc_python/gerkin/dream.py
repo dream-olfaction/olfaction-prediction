@@ -76,7 +76,7 @@ def filter_Y_dilutions(df, concentration, keep_replicates=False):
 def impute(df,kind):
     if kind == 'median':
         imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
-        df[:] = imputer.fit_transform(df)
+        df[:] = imputer.fit_transform(df.as_matrix())
     return df
 
 
@@ -193,7 +193,7 @@ def impute_X(X):
     # The X_obs matrix (molecular descriptors) still has NaN values that
     # need to be imputed.  
     imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
-    X[:] = imputer.fit_transform(X)
+    X[:] = imputer.fit_transform(X.as_matrix())
     #print("The X matrix now has shape (%dx%d) (molecules by non-NaN good molecular descriptors)" % X.shape)
     return X,imputer
 

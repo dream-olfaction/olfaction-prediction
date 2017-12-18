@@ -100,7 +100,7 @@ def format_perceptual_data(perceptual_data, target_dilution=None,
     df = df.transpose()
     df.columns = [['Metadata']*2+['Subject']*49,df.columns]
     df = df.reorder_levels(['Descriptor','CID','Dilution','Replicate'])
-    df = df.sortlevel()
+    df = df.sort_index() # Was df.sortlevel()
     descriptors = get_descriptors(format=True)
     # Sort descriptors in paper order
     df = df.T[descriptors].T
