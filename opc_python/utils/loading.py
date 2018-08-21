@@ -5,7 +5,7 @@ import pandas as pd
 
 from __init__ import *
 import opc_python
-from opc_python import * # Import constants.  
+from opc_python import * # Import constants.
 ROOT_PATH = os.path.split(opc_python.__path__[0])[0]
 from opc_python.utils import scoring,search
 
@@ -25,7 +25,7 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
         kind2 = 'TestSet'
     else:
         raise ValueError("No such kind: %s" % kind)
-    
+
     if kind in ['training-norep','replicated']:
         training = load_perceptual_data('training')
         with_replicates = [x[1:3] for x in training.index if x[3]==1]
@@ -120,7 +120,7 @@ def get_descriptors(format=False):
 def preformat_perceptual_data(kind):
     """Get leaderboard and testset data into the same file format
     as training data"""
-    
+
     if kind == 'leaderboard':
         target_name = 'LeaderboardSet'
         data_name = 'LBs1'
@@ -161,7 +161,7 @@ def preformat_perceptual_data(kind):
                                           dilution,subject]+['NaN']*21
                 lines_new[line_id][6+descriptors.index(descriptor.strip())] = \
                     value
-    
+
     for line_id in sorted(lines_new,
                           key=lambda x:[int(_) for _ in x.split('_')]):
         line = lines_new[line_id]
@@ -170,9 +170,9 @@ def preformat_perceptual_data(kind):
 
 
 def make_nspdk_dict(CIDs):
-    nspdk_CIDs = pd.read_csv('%s/derived/nspdk_cid.csv' % DATA_PATH, 
-                                 header=None, dtype='int').as_matrix().squeeze()
-    # Start to load the NSPDK features.  
+    nspdk_CIDs = pd.read_csv('%s/derived/nspdk_cid.csv' % DATA_PATH,
+                                 header=None, dtype='int').values.squeeze()
+    # Start to load the NSPDK features.
     with open('%s/derived/nspdk_r3_d4_unaug.svm' % DATA_PATH) as f:
         nspdk_dict = {}
         i = 0
@@ -186,24 +186,27 @@ def make_nspdk_dict(CIDs):
                 key_vals = x.split(' ')[1:]
                 for key_val in key_vals:
                     key,val = key_val.split(':')
+                    key = int(key)
+                    val = float(val)
                     if key in nspdk_dict:
                         nspdk_dict[key][CID] = val
                     else:
                         nspdk_dict[key] = {CID:val}
     # Only include NSPDK features known for more than one of our CIDs
-    nspdk_dict = {key:value for key,value in nspdk_dict.items() if len(value)>1} 
+    nspdk_dict = {key:value for key,value in nspdk_dict.items() if len(value)>1}
     return nspdk_dict
 
 
 def get_molecular_data(sources,CIDs):
-    if 'dragon' not in sources:
-        sources = ['dragon']+sources
+    #if 'dragon' not in sources:
+    #    sources = ['dragon']+sources
     dfs = {}
     for source in sources:
         if source == 'dragon':
             mdd_file_path = os.path.join(DATA_PATH,
                                          'molecular_descriptors_data.txt')
             df = pd.read_csv(mdd_file_path,delimiter='\t',index_col=0)
+            df = df.loc[CIDs,:]
         if source == 'episuite':
             df = pd.read_table('%s/DREAM_episuite_descriptors.txt' % DATA_PATH,
                                index_col=0).drop('SMILES',1)
@@ -215,19 +218,21 @@ def get_molecular_data(sources,CIDs):
             df = df.loc[CIDs]
         if source == 'nspdk':
             nspdk_dict = make_nspdk_dict(CIDs)
-            df = pd.DataFrame(index=CIDs,columns=nspdk_dict.keys())
-            for feature,facts in nspdk_dict.items():
-                for CID,value in facts.items():
-                    df.loc[CID,feature] = value
+            #df = pd.DataFrame(index=CIDs,columns=nspdk_dict.keys())
+            df = pd.DataFrame.from_dict(nspdk_dict)
+            #for feature,facts in nspdk_dict.items():
+            #    for CID,value in facts.items():
+            #        df.loc[CID,feature] = value
         if source == 'gramian':
-            nspdk_CIDs = pd.read_csv('%s/derived/nspdk_cid.csv' % DATA_PATH, 
+            nspdk_CIDs = pd.read_csv('%s/derived/nspdk_cid.csv' % DATA_PATH,
                                      header=None, dtype='int')\
-                                     .as_matrix().squeeze()
-            # These require a large file that is not on GitHub, but can be obtained separately.  
+                                     .values.squeeze()
+            # These require a large file that is not on GitHub, but can be obtained separately.
             df = pd.read_table('%s/derived/nspdk_r3_d4_unaug_gramian.mtx' \
-                               % DATA, delimiter=' ', header=None)
+                               % DATA_PATH, delimiter=' ', header=None)
             CID_indices = [list(nspdk_CIDs).index(CID) for CID in CIDs]
-            df = df[CID_indices,:]
+            df = df.loc[CID_indices,:]
+            df.index = CIDs
         print("%s has %d features for %d molecules." % \
               (source.title(),df.shape[1],df.shape[0]))
         dfs[source] = df
@@ -241,15 +246,15 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
     if type(kind) is list:
         x = []
         for k in kind:
-            x += get_CID_dilutions(k, target_dilution=target_dilution, 
+            x += get_CID_dilutions(k, target_dilution=target_dilution,
                                    cached=cached)
         return sorted(list(set(x)))
     assert kind in ['training','training-norep','replicated',
                     'leaderboard','testset']
     """Return CIDs for molecules that will be used for:
-        'leaderboard': the leaderboard to determine the provisional 
+        'leaderboard': the leaderboard to determine the provisional
                        leaders of the competition.
-        'testset': final testing to determine the winners 
+        'testset': final testing to determine the winners
                    of the competition."""
     if cached:
         file_path = os.path.join(DATA_PATH,'%s.pickle' % kind)
@@ -280,7 +285,7 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
                          continue
                     data.append((CID,dilution))#,high))
                     if kind in ['leaderboard','testset']:
-                        data.append((CID,-3)) # Add the Intensity dilution.
+                        data.append((CID,-3.0)) # Add the Intensity dilution.
             data = list(set(data))
         elif kind == 'training-norep':
             training = set(get_CID_dilutions('training',
@@ -299,7 +304,7 @@ def get_CIDs(kind, target_dilution=None):
 
 
 def get_CID_rank(kind,dilution=-3):
-    """Returns CID dictionary with 1 if -3 dilution is highest, 
+    """Returns CID dictionary with 1 if -3 dilution is highest,
     0 if it is lowest, -1 if it is not present.
     """
 
@@ -334,8 +339,8 @@ def load_data_matrix(kind='training',gold_standard_only=False,
      descriptor number (0-20)
      dilution rank (1/10=0, 1/1000=1, 1/100000=2, 1/1000000=3)
      replicate (original=0, replicate=1)
-    Data is masked so locations with no data are not included 
-    in statistics on this array.  
+    Data is masked so locations with no data are not included
+    in statistics on this array.
     """
 
     _, perceptual_obs_data = load_perceptual_data(kind)
@@ -370,7 +375,7 @@ def load_data_matrix(kind='training',gold_standard_only=False,
 
 """Output"""
 
-# Write predictions for each subchallenge to a file.  
+# Write predictions for each subchallenge to a file.
 def open_prediction_file(subchallenge,kind,name):
     prediction_file_path = os.path.join(PREDICTION_PATH,\
                                         'challenge_%d_%s_%s.txt' \
@@ -394,7 +399,7 @@ def write_prediction_files(Y,kind,subchallenge,name):
                     value = Y[subject][d_short].loc[CID].round(3)
                     writer.writerow([CID,subject,d_long,value])
         f.close()
-    
+
     # Subchallenge 2.
     elif subchallenge == 2:
         writer.writerow(["#oID","descriptor","value","std"])
@@ -404,7 +409,7 @@ def write_prediction_files(Y,kind,subchallenge,name):
                 std = Y['std'][d_short].loc[CID].round(3)
                 writer.writerow([CID,d_long,value,std])
         f.close()
-    
+
 
 def load_eva_data(save_formatted=False):
     eva_file_path = os.path.join(DATA_PATH,'eva_100_training_data.json')
@@ -416,7 +421,7 @@ def load_eva_data(save_formatted=False):
         smile_cids[smile] = search.smile2cid(smile)
 
     cid_smiles = {cid:smile for smile,cid in smile_cids.items()}
-    eva_cids = list(smile_cids.values())
+    eva_cids = list(smile_cids.values)
     available_cids = []
     eva_data = []
     for kind in ('training','leaderboard','testset'):
