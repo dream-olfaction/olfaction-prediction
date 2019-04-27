@@ -26,14 +26,14 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
     else:
         raise ValueError("No such kind: %s" % kind)
 
-    if kind in ['training-norep','replicated']:
+    if kind in ['training-norep', 'replicated']:
         training = load_perceptual_data('training')
         with_replicates = [x[1:3] for x in training.index if x[3]==1]
     data = []
     file_path = os.path.join(DATA_PATH,'%s.txt' % kind2)
     with open(file_path) as f:
         reader = csv.reader(f, delimiter="\t")
-        for line_num,line in enumerate(reader):
+        for line_num, line in enumerate(reader):
             if line_num > 0:
                 line[0:6] = [x.strip() for x in line[0:6]]
                 line[2] = 1 if line[2]=='replicate' else 0
@@ -51,7 +51,7 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
                     if CID_dilution in with_replicates:
                         data.append(line)
                 else:
-                    if kind in ['leaderboard','testset']:
+                    if kind == 'leaderboard' or (kind == 'testset' and mag!=-3):
                         rel_intensity = 'low' if line[3]=='high' else 'high'
                         line[3] = rel_intensity
                         intensity = line[6]
@@ -68,7 +68,7 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
                 headers = line
                 if just_headers:
                     return headers
-    df = pd.DataFrame(data,columns=headers)
+    df = pd.DataFrame(data, columns=headers)
     if not raw:
         df = format_perceptual_data(df)
     return df
@@ -77,6 +77,7 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
 def format_perceptual_data(perceptual_data, target_dilution=None,
                            use_replicates=True, subjects=range(1,50)):
     p = perceptual_data
+    #p = p.dropna(subset=['INTENSITY/STRENGTH'])
     p.rename(columns={'Compound Identifier':'CID',
                       'Odor':'Name',
                       'subject #':'Subject'},inplace=True)
@@ -133,12 +134,12 @@ def preformat_perceptual_data(kind):
     f_new = open(new_file_path,'w')
     writer = csv.writer(f_new,delimiter="\t")
     training_file_path = os.path.join(DATA_PATH,'TrainSet.txt')
-    headers = list(pd.read_table(training_file_path).columns)
+    headers = list(pd.read_csv(training_file_path, sep='\t').columns)
     descriptors = headers[6:]
     writer.writerow(headers)
     dilutions_file_path = os.path.join(DATA_PATH,'dilution_%s.txt' % kind)
-    dilutions = pd.read_table(dilutions_file_path,index_col=0,header=0,
-                                  names=['CID','Dilution'])
+    dilutions = pd.read_csv(dilutions_file_path, index_col=0, header=0,
+                                  names=['CID','Dilution'], sep='\t')
     lines_new = {}
     data_path = os.path.join(DATA_PATH,'%s.txt' % data_name)
     with open(data_path) as f:
@@ -149,16 +150,26 @@ def preformat_perceptual_data(kind):
                 CID = int(CID)
                 subject = int(subject)
                 dilution = dilutions.loc[CID]['Dilution']
+                if kind == 'testset' and dilution2magnitude(dilution)==-5:
+                    dilution = "'1/1,000'"
                 mag = dilution2magnitude(dilution)
                 if descriptor == 'INTENSITY/STRENGTH':
-                    high = mag < 1e-3
+                    if kind == 'testset':
+                        high = True
+                    else:
+                        high = mag > -3
                 else:
-                    high = mag > 1e-3
-                line_id = '%d_%d_%d' % (CID,subject,mag)
+                    if kind == 'testset':
+                        high = True
+                    else:
+                        high = mag > -3
+                mag = dilution2magnitude(dilution)
+                line_id = '%d_%d_%d' % (CID, subject, mag)
                 if line_id not in lines_new:
-                    lines_new[line_id] = [CID,'N/A',0,
+                    print(line_id)
+                    lines_new[line_id] = [CID, 'N/A', 0,
                                           'high' if high else 'low',
-                                          dilution,subject]+['NaN']*21
+                                          dilution, subject] + ['NaN']*21
                 lines_new[line_id][6+descriptors.index(descriptor.strip())] = \
                     value
 
@@ -208,8 +219,8 @@ def get_molecular_data(sources,CIDs):
             df = pd.read_csv(mdd_file_path,delimiter='\t',index_col=0)
             df = df.loc[CIDs,:]
         if source == 'episuite':
-            df = pd.read_table('%s/DREAM_episuite_descriptors.txt' % DATA_PATH,
-                               index_col=0).drop('SMILES',1)
+            df = pd.read_csv('%s/DREAM_episuite_descriptors.txt' % DATA_PATH,
+                               index_col=0, sep='\t').drop('SMILES',1)
             df = df.loc[CIDs]
             df.iloc[:,47] = 1*(df.iloc[:,47]=='YES ')
         if source == 'morgan':
@@ -228,8 +239,8 @@ def get_molecular_data(sources,CIDs):
                                      header=None, dtype='int')\
                                      .values.squeeze()
             # These require a large file that is not on GitHub, but can be obtained separately.
-            df = pd.read_table('%s/derived/nspdk_r3_d4_unaug_gramian.mtx' \
-                               % DATA_PATH, delimiter=' ', header=None)
+            df = pd.read_csv('%s/derived/nspdk_r3_d4_unaug_gramian.mtx' \
+                               % DATA_PATH, sep=' ', header=None)
             CID_indices = [list(nspdk_CIDs).index(CID) for CID in CIDs]
             df = df.loc[CID_indices,:]
             df.index = CIDs
@@ -285,7 +296,7 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
                          continue
                     data.append((CID,dilution))#,high))
                     if kind in ['leaderboard','testset']:
-                        data.append((CID,-3.0)) # Add the Intensity dilution.
+                        data.append((CID, -3.0)) # Add the Intensity dilution.
             data = list(set(data))
         elif kind == 'training-norep':
             training = set(get_CID_dilutions('training',
@@ -293,7 +304,7 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
             replicated = set(get_CID_dilutions('replicated',
                                                target_dilution=target_dilution, cached=cached))
             data = list(training.difference(replicated))
-    data = sorted(data)
+    data = sorted(list(set(data)))
     return data
 
 
@@ -448,10 +459,11 @@ def load_eva_data(save_formatted=False):
     return (available_cids,eva_data)
 
 def pickle_cid_dilutions():
-    for kind in ['training','leaderboard','testset',
-                 'training-norep','replicated']:
+    for kind in ['training', 'leaderboard', 'testset',
+                 'training-norep', 'replicated']:
         print("Loading %s data" % kind)
         data = get_CID_dilutions(kind, cached=False)
         print("Pickling %s data" % kind)
-        with open(os.path.join(DATA_PATH,'%s.pickle' % kind),'wb') as f:
+        path = os.path.join(DATA_PATH,'%s.pickle' % kind)
+        with open(path, 'wb') as f:
             pickle.dump(data,f)

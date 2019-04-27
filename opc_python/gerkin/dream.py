@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import types
 from collections import OrderedDict
-from sklearn.preprocessing import Imputer,MinMaxScaler
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler
 
 from opc_python import * # Import constants.
 from opc_python.utils import loading, scoring, ProgressBar
@@ -24,11 +25,12 @@ def filter_Y_dilutions(df, concentration, keep_replicates=False):
         return df
     assert concentration in ['high','low','gold','all'] or type(concentration) is int
     try:
-        df = df.stack('Descriptor')
+        df = df.stack('Descriptor', dropna=False)
         unstack = True
     except KeyError:
         unstack = False
         pass
+    
     if keep_replicates:
         order = ['Descriptor','CID','Replicate']
     else:
@@ -75,15 +77,18 @@ def filter_Y_dilutions(df, concentration, keep_replicates=False):
 
 def impute(df,kind):
     if kind == 'median':
-        imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
-        df[:] = imputer.fit_transform(df.as_matrix())
+        imputer = SimpleImputer(missing_values=np.nan, strategy='median')
+        df[:] = imputer.fit_transform(df.values)
     return df
 
 
 def make_Y(df, concentration='all', imputer=None, keep_replicates=False):
     # df comes from loading.load_perceptual_data
     df = filter_Y_dilutions(df, concentration, keep_replicates=False)
-    df = df['Subject'].unstack('Descriptor')
+    # Some CID/dilution combinations may not have data
+    df = df.unstack('Descriptor')
+    indices_with_values = df.mean(axis=1).dropna().index
+    df = df.loc[indices_with_values]
     if imputer:
         df = impute(df,imputer)
     return df
@@ -93,15 +98,20 @@ def make_Y(df, concentration='all', imputer=None, keep_replicates=False):
 # Molecular processing (X) #
 ############################
 
-def filter_X_dilutions(df, concentration):
-    """Select only one dilution ('high', 'low', or some number)."""
-    assert concentration in ['high','low'] or type(concentration) is int
+def filter_X_dilutions(df, concentration, descriptor='Intensity'):
+    """Select only one dilution ('high', 'low', 'gold', or some number)."""
+    assert concentration in ['high', 'low', 'gold'] or type(concentration) is int
     df = df.sort_index(level=['CID','Dilution'])
     df = df.fillna(999) # Pandas doesn't select correctly on NaNs
     if concentration == 'low':
         df = df.groupby(level=['CID']).first()
     elif concentration == 'high':
         df = df.groupby(level=['CID']).last()
+    elif concentration == 'gold':
+        if descriptor == 'Intensity':
+            df = filter_X_dilutions(df, -3)
+        else:
+            df = filter_X_dilutions(df, 'high')
     else:
         df = df.loc[[x for x in df.index if x[1]==concentration]]
         df = df.groupby(level=['CID']).first()
@@ -142,7 +152,10 @@ def make_X(df,CID_dilutions,target_dilution=None,threshold=None,bad=None,
     if not quiet:
         print("The X matrix now has shape (%dx%d) molecules by " % X.shape +\
           "non-NaN good molecular descriptors")
-    return X,good1,good2,means,stds,imputer
+    
+    metadata = {'good1': good1, 'good2': good2, 'means': means, 
+                'stds': stds, 'imputer': imputer}
+    return X, metadata
 
 def get_molecular_vectors(molecular_data,CID_dilutions):
     CIDs = []
@@ -192,7 +205,7 @@ def purge1_X(X,threshold=0.25,good_molecular_descriptors=None):
 def impute_X(X):
     # The X_obs matrix (molecular descriptors) still has NaN values that
     # need to be imputed.
-    imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
+    imputer = SimpleImputer(missing_values=np.nan, strategy='median')
     X[:] = imputer.fit_transform(X.values)
     #print("The X matrix now has shape (%dx%d) (molecules by non-NaN good molecular descriptors)" % X.shape)
     return X,imputer
