@@ -64,7 +64,7 @@ best[41]=[False,None,15,1,0.38,True]
 
 def get_hyperparams(kind):
     """
-    kind is one of 'Mean', 'StDev', or 'Subject'
+    kind is one of 'mean', 'stdev', or 'subject'
     param_name is one of the items in `param_names` below.
     """  
     param_names = ['use_et', 'max_features', 'max_depth', 'min_samples_leaf', 
@@ -74,12 +74,12 @@ def get_hyperparams(kind):
     result = pd.DataFrame(index=descriptors, columns=param_names)
     for i, param_name in enumerate(param_names):
         for j, descriptor in enumerate(descriptors):
-            if kind == 'Mean':
+            if kind == 'mean':
                 offset = 0
-            elif kind == 'StDev':
+            elif kind == 'stdev':
                 offset = 21
             else:
-                raise Exception("Kind must be either 'Mean' or 'StDev'")
+                raise Exception("Kind must be either 'mean' or 'stdev'")
             result.loc[descriptor, param_name] = best[j+offset][i]
     return result
 

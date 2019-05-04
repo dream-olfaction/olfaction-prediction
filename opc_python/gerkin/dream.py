@@ -119,17 +119,19 @@ def filter_X_dilutions(df, concentration, descriptor='Intensity'):
     df = df.replace(999,float('NaN')) # Undo the fillna line above.
     return df
 
-def make_X(df,CID_dilutions,target_dilution=None,threshold=None,bad=None,
-           good1=None,good2=None,means=None,stds=None,raw=False,quiet=False):
+def make_X(molecular_data, CID_dilutions, target_dilution=None, threshold=None, bad=None,
+           good1=None, good2=None, means=None, stds=None, raw=False, quiet=False):
     # df produced from e.g. loading.get_molecular_data()
     if threshold is None:
         threshold = NAN_PURGE_THRESHOLD
 
-    data = [list(df.loc[CID])+[dilution,i] \
-            for i,(CID,dilution) in enumerate(CID_dilutions)]
-    X = pd.DataFrame(data=data,index=pd.MultiIndex.from_tuples(CID_dilutions,
-                                     names=['CID','Dilution']),
-                     columns=list(df.columns)+['dilution','mean_dilution'])
+    # Use the CID as the index for joining
+    CID_dilutions = CID_dilutions.set_index('CID')
+    # Join, keeping only those CIDs found in all_CID_dilutions
+    X = molecular_data.join(CID_dilutions, how='right')
+    # Add dilution to the index, but keep it as a predictor
+    X = X.set_index('Dilution', append=True, drop=False)
+    
     if not raw:
         if bad:
             X = X.drop(bad)
@@ -152,6 +154,10 @@ def make_X(df,CID_dilutions,target_dilution=None,threshold=None,bad=None,
     if not quiet:
         print("The X matrix now has shape (%dx%d) molecules by " % X.shape +\
           "non-NaN good molecular descriptors")
+        feature_origins = [f[0] for f in X.columns if isinstance(f, tuple)]
+        feature_counts = pd.Series(feature_origins).value_counts()
+        for feature, count in feature_counts.iteritems():
+            print("%d descriptors come from %s." % (count, feature))
     
     metadata = {'good1': good1, 'good2': good2, 'means': means, 
                 'stds': stds, 'imputer': imputer}

@@ -2,6 +2,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from scipy.stats import pearsonr
 from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
 from sklearn.model_selection import ShuffleSplit,cross_val_score
 from sklearn.linear_model import RandomizedLasso,Ridge
@@ -61,12 +62,16 @@ def rfc_final(X, Y, Y_imp,
     score = scoring.score2(predicted,observed,quiet=quiet)
     return (rfcs,score)
 
-def rfc_fit_models(X, Y, Y_imp, hp, n_estimators=100, seed=0, std=False):
-    p = ProgressBar(N_DESCRIPTORS * (1+int(std)))
+def rfc_fit_models(X, Y, Y_imp, hp, n_estimators=100, seed=0, std=False, 
+                   descriptors=None):
+    if not descriptors:
+        descriptors = DESCRIPTORS
+    n_descriptors = len(descriptors)
+    p = ProgressBar(n_descriptors * (1+int(std)))
     models = {'mean':{}}
     if std:
         models['std'] = {}
-    for d, descriptor in enumerate(DESCRIPTORS * (1+int(std))):
+    for d, descriptor in enumerate(descriptors * (1+int(std))):
         kind = 'std' if d >= N_DESCRIPTORS else 'mean'
         p.animate(d, "Fitting %s %s" % (descriptor, kind))
         hp_d = hp.loc[descriptor]
@@ -88,15 +93,18 @@ def rfc_fit_models(X, Y, Y_imp, hp, n_estimators=100, seed=0, std=False):
     return models
 
 def rfc_get_predictions(models, X, trans_params=None, dilution='gold'):
-    X_d = dream.filter_X_dilutions(X, dilution)
-    CIDs = list(X_d.index) # May be fewer for intensity than for others   
-    predicted = {key: pd.DataFrame(index=CIDs, columns=DESCRIPTORS) for key in models}
+      
+    predicted = {key: None for key in models}
     
     for kind in models:
         for d in DESCRIPTORS:
-            X_d = dream.filter_X_dilutions(X, dilution)
-            CIDs = list(X_d.index) # May be fewer for intensity than for others
-            predicted[kind].loc[CIDs, d] = models[kind][d].predict(X_d)
+            if d in models[kind]:
+                X_d = dream.filter_X_dilutions(X, dilution, descriptor=d)
+                CIDs = list(X_d.index) # May be fewer for intensity than for others 
+                predicted[kind] = pd.DataFrame(index=CIDs, columns=DESCRIPTORS).astype('float')
+                predicted[kind].loc[CIDs, d] = models[kind][d].predict(X_d)
+        # Drop descriptors for which we have no model
+        #predicted[kind] = predicted[kind].dropna(axis=1)
             
     if 'std' in models:
         def f_transform(x, k0, k1):
@@ -113,9 +121,10 @@ def rfc_get_predictions(models, X, trans_params=None, dilution='gold'):
                 k0, k1 = trans_params
             except:
                 tw = 0
-            p_m = predicted['mean'][d]
-            p_s = predicted['std'][d]
-            predicted['std'][d] = tw*f_transform(p_m,k0,k1) + (1-tw)*p_s
+            if d in predicted['mean']:
+                p_m = predicted['mean'][d]
+                p_s = predicted['std'][d]
+                predicted['std'][d] = tw*f_transform(p_m,k0,k1) + (1-tw)*p_s
     
     return predicted
     #for kind in predicted:
@@ -127,6 +136,20 @@ def get_observed(Y, dilution='gold'):
     observed = {'mean': Y.mean(axis=1).unstack('Descriptor'),
                 'stdev': Y.std(axis=1).unstack('Descriptor')}
     return observed
+
+
+def summarize_fit(predicted, observed, subject, descriptors):
+    # For each descriptor, print the Pearson correlation between 
+    # the predicted and observed ratings
+    for descriptor in descriptors:
+        try:
+            p = predicted[subject][descriptor]
+        except KeyError:
+            pass
+        else:
+            o = observed[subject][descriptor]
+            r, p = pearsonr(p, o)
+            print('R = %.3g for %s' % (r, descriptor))
 
 def rfc_(X_train,Y_train,X_test_int,X_test_other,Y_test,
          max_features=1500,n_estimators=1000,max_depth=None,min_samples_leaf=1):

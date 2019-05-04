@@ -12,6 +12,85 @@ from opc_python.utils import scoring,search
 DATA_PATH = os.path.join(ROOT_PATH,'data')
 PREDICTION_PATH = os.path.join(ROOT_PATH,'predictions')
 
+def load_raw_bmc_data(nrows=None):
+    """Load raw data from Keller and Vosshall, 2016 supplement."""
+    path = os.path.join(DATA_PATH, '12868_2016_287_MOESM1_ESM.xlsx')
+    df_raw = pd.read_excel(path, header=2, nrows=nrows)
+    return df_raw
+
+def format_bmc_data(df, # The raw data frame returned by `load_raw_bmc_data` 
+                    only_dream_subjects=True, # Whether to only keep DREAM subjects
+                    only_dream_descriptors=True, # Whether to only keep DREAM descriptors
+                    only_dream_molecules=True): # Whether to only keep DREAM molecules
+    """Format raw data from the BMC paper to be usable for modeling"""
+    # Remove leading and trailing white space from column names
+    df.columns = df.columns.str.strip()
+    
+    # Get the raw DREAM descriptor list
+    descriptors_raw = get_descriptors()
+    # Get the publication-style descriptor names
+    descriptors = get_descriptors(format=True)
+    # Revise to the Keller and Vosshall descriptor names
+    descriptors_raw[0] = 'HOW STRONG IS THE SMELL?'
+    descriptors_raw[1] = 'HOW PLEASANT IS THE SMELL?'
+    
+    # Possibly include "Familiarity" as a descriptor
+    if not only_dream_descriptors: 
+        descriptors_raw.append('HOW FAMILIAR IS THE SMELL?')
+        descriptors.append('Familiarity')
+    
+    # Possibly restrict subjects to those used in the DREAM challenge
+    # Note that numeric subject IDs in the BMC paper and in the DREAM challenge are not identical
+    if only_dream_subjects:
+        df['Subject'] = df['Subject # (DREAM challenge)'].fillna(0).astype(int)
+        df = df[df['Subject']>0]
+    else:
+        df['Subject'] = df['Subject # (this study)'].astype(int)
+    
+    # Rename columns to match DREAM challenge
+    df = df.rename(columns={'Odor dilution': 'Dilution'})
+    df = df.rename(columns=dict(zip(descriptors_raw, descriptors)))
+    
+    # Fix CIDs for molecules that only have CAS registry numbers.  
+    # Geranylacetone didn't have a CID listed in the raw data
+    # Isobutyl acetate had the wrong CAS number in the raw data
+    df['CID'] = df['CID'].astype(str)\
+        .str.replace('3796-70-1', '1549778')\
+        .str.replace('109-19-0', '8038')\
+        .astype(int) 
+    
+    # Possibly keep only the 476 DREAM challenge molecules
+    if only_dream_molecules:
+        dream_CIDs = get_CIDs(['training', 'leaderboard', 'testset'])
+        assert len(dream_CIDs) == 476
+        df = df[df['CID'].isin(dream_CIDs)]
+    
+    # Keep only relevant columns
+    df = df[['CID', 'Dilution', 'Subject'] + descriptors]
+    
+    # Fill NaN descriptors values with 0 if Intensity is not 0.  
+    df = df.apply(lambda x:x.fillna(0) if x['Intensity']>0 else x, axis=1)
+    
+    # Make dilution values integer -log10 dilutions
+    df['Dilution'] = df['Dilution'].apply(dilution2magnitude).astype(float)
+    
+    # Set index and set column axis name
+    df = df.set_index(['CID', 'Dilution', 'Subject'])
+    df.columns.name = 'Descriptor'
+    
+    # Identify replicates and add this information to the index
+    df['Replicate'] = df.index.duplicated().astype(int)
+    df = df.reset_index().set_index(['CID', 'Dilution', 'Replicate', 'Subject'])
+    if only_dream_subjects:
+        assert df.index.duplicated().sum() == 0 # DREAM subjects replicates should be properly indexed now
+    
+    # Rearrange dataframe to pivot subjects and descriptors
+    df = df.unstack('Subject').stack('Descriptor')
+    df = df.reorder_levels(['Descriptor', 'CID', 'Dilution', 'Replicate'])
+    df = df.sort_index()
+    
+    return df
+
 def load_perceptual_data(kind, just_headers=False, raw=False):
     if type(kind) is list:
         dfs = [load_perceptual_data(k, raw=raw) for k in kind]
@@ -29,7 +108,7 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
     if kind in ['training-norep', 'replicated']:
         training = load_perceptual_data('training')
         with_replicates = [x[1:3] for x in training.index if x[3]==1]
-    data = []
+    data = [] 
     file_path = os.path.join(DATA_PATH,'%s.txt' % kind2)
     with open(file_path) as f:
         reader = csv.reader(f, delimiter="\t")
@@ -47,7 +126,7 @@ def load_perceptual_data(kind, just_headers=False, raw=False):
                 if kind == 'training-norep':
                     if CID_dilution not in with_replicates:
                         data.append(line)
-                elif kind == 'replicated':
+                elif kind == 'replicated': 
                     if CID_dilution in with_replicates:
                         data.append(line)
                 else:
@@ -248,6 +327,7 @@ def get_molecular_data(sources,CIDs):
               (source.title(),df.shape[1],df.shape[0]))
         dfs[source] = df
     df = pd.concat(dfs,axis=1)
+    df.index.name = 'CID'
 
     print("There are now %d total features." % (df.shape[1]))
     return df
@@ -255,11 +335,13 @@ def get_molecular_data(sources,CIDs):
 
 def get_CID_dilutions(kind, target_dilution=None, cached=True):
     if type(kind) is list:
-        x = []
+        data = pd.DataFrame(columns=['CID', 'Dilution'])
         for k in kind:
-            x += get_CID_dilutions(k, target_dilution=target_dilution,
-                                   cached=cached)
-        return sorted(list(set(x)))
+            d = get_CID_dilutions(k, target_dilution=target_dilution,
+                                     cached=cached)
+            data = data.append(d) 
+        data = data.sort_values(['CID', 'Dilution']).reset_index(drop=True)
+        return data
     assert kind in ['training','training-norep','replicated',
                     'leaderboard','testset']
     """Return CIDs for molecules that will be used for:
@@ -268,14 +350,13 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
         'testset': final testing to determine the winners
                    of the competition."""
     if cached:
-        file_path = os.path.join(DATA_PATH,'%s.pickle' % kind)
+        file_path = os.path.join(DATA_PATH, '%s.csv' % kind)
         if not os.path.isfile(file_path):
             print(("Determining CIDs and dilutions the long way one time."
                    "Results will be stored for faster retrieval in the future"))
-            pickle_cid_dilutions()
-        with open(file_path,'rb') as f:
-            data = pickle.load(f)
-    else:
+            cache_cid_dilutions()
+        data = pd.read_csv(file_path)
+    else: # Note this may not include some of the testset dilutions
         if kind in ['training','replicated','leaderboard','testset']:
             data = []
             perceptual_data = load_perceptual_data(kind)
@@ -304,14 +385,17 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
             replicated = set(get_CID_dilutions('replicated',
                                                target_dilution=target_dilution, cached=cached))
             data = list(training.difference(replicated))
-    data = sorted(list(set(data)))
+        data = sorted(list(set(data)))
+        data = pd.DataFrame(data, columns=['CID', 'Dilution'])
+    data['CID'] = data['CID'].astype(int)
+    data['Dilution'] = data['Dilution'].astype(float)
     return data
 
 
-def get_CIDs(kind, target_dilution=None):
-    CID_dilutions = get_CID_dilutions(kind, target_dilution=target_dilution)
-    CIDs = [x[0] for x in CID_dilutions]
-    return sorted(list(set(CIDs)))
+def get_CIDs(kind, target_dilution=None, cached=True):
+    CID_dilutions = get_CID_dilutions(kind, target_dilution=target_dilution, cached=cached)
+    CIDs = CID_dilutions['CID'].sort_values().unique()
+    return CIDs
 
 
 def get_CID_rank(kind,dilution=-3):
@@ -458,12 +542,24 @@ def load_eva_data(save_formatted=False):
 
     return (available_cids,eva_data)
 
-def pickle_cid_dilutions():
+def pool_CID_dilutions(CID_dilution_list):
+    CID_dilutions = pd.DataFrame(columns=['CID', 'Dilution'])
+    for x in CID_dilution_list:
+        CID_dilutions = CID_dilutions.append(x)
+    CID_dilutions = CID_dilutions.sort_values(['CID', 'Dilution']).reset_index(drop=True)
+    return CID_dilutions
+
+def cache_cid_dilutions():
+    print("Loading perceptual data")
+    raw_perceptual_data = loading.load_raw_bmc_data()
+    print("Fomatting perceptual data")
+    perceptual_data = loading.format_bmc_data(raw_perceptual_data,
+                                              only_dream_subjects=True, # Whether to only keep DREAM subjects
+                                              only_dream_descriptors=True, # Whether to only keep DREAM descriptors
+                                              only_dream_molecules=True) # Whether to only keep DREAM molecules)
     for kind in ['training', 'leaderboard', 'testset',
                  'training-norep', 'replicated']:
-        print("Loading %s data" % kind)
-        data = get_CID_dilutions(kind, cached=False)
-        print("Pickling %s data" % kind)
-        path = os.path.join(DATA_PATH,'%s.pickle' % kind)
-        with open(path, 'wb') as f:
-            pickle.dump(data,f)
+        CIDs = loading.get_CIDs(kind)
+        path = os.path.join(OP_PATH, 'data', '%s.csv' % kind)
+        CID_dilutions = all_CID_dilutions[all_CID_dilutions['CID'].isin(CIDs)]
+        CID_dilutions.to_csv(path, header=True, index=False)
