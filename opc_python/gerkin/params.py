@@ -13,6 +13,10 @@
 #Format:
 #col:[use_et,max_features,max_depth,min_samples,
 #     regularize_or_transform_weight,use_mask] 
+
+import pandas as pd
+from ..utils import loading
+
 best = {col:{} for col in range(42)}
 best[0]=[True,None,None,1,0.8,False]          
 best[1]=[False,None,None,1,0.7,False]         
@@ -58,26 +62,34 @@ best[40]=[False,200,6,4,1.0,True]
 best[41]=[False,None,15,1,0.38,True]     
 
 
-def get_params(i):
-    cols = range(42)
-    return {col:best[col][i] for col in cols}
+def get_hyperparams(kind):
+    """
+    kind is one of 'mean', 'stdev', or 'subject'
+    param_name is one of the items in `param_names` below.
+    """  
+    param_names = ['use_et', 'max_features', 'max_depth', 'min_samples_leaf', 
+             'regularize', 'use_mask']
+    # regularize is the same as trans_weight
+    descriptors = loading.get_descriptors(format=True)
+    result = pd.DataFrame(index=descriptors, columns=param_names)
+    for i, param_name in enumerate(param_names):
+        for j, descriptor in enumerate(descriptors):
+            if kind == 'mean':
+                offset = 0
+            elif kind == 'stdev':
+                offset = 21
+            else:
+                raise Exception("Kind must be either 'mean' or 'stdev'")
+            result.loc[descriptor, param_name] = best[j+offset][i]
+    return result
 
 
-def get_other_params():
-    use_et = get_params(0)
-    max_features = get_params(1)
-    max_depth = get_params(2)
-    min_samples_leaf = get_params(3)
-    trans_weight = get_params(4)
-    regularize = get_params(4)
-    use_mask = get_params(5)
-    for col in range(21):
-        trans_weight[col] = trans_weight[col+21]
-    return (use_et,max_features,max_depth,min_samples_leaf,
-            trans_weight,regularize,use_mask)
+def get_hyperparam(kind, descriptor, param_name):
+    params = get_params(kind)
+    return params.loc[descriptor, param_name]
 
 
-def get_trans_params(Y, descriptors, plot=True):
+def get_trans_params(Y_all, descriptors, plot=True):
     import matplotlib
     import matplotlib.pyplot as plt
     import numpy as np
@@ -98,19 +110,20 @@ def get_trans_params(Y, descriptors, plot=True):
         fig,axes = plt.subplots(3,7,sharex=True,sharey=True,figsize=(12,6))
         ax = axes.flat
     trans_params = {col:None for col in range(21)}
+
+    Y_mean = Y_all.stack('Descriptor').mean(axis=1).unstack('Descriptor')
+    Y_stdev = Y_all.stack('Descriptor').std(axis=1).unstack('Descriptor')
     
     from scipy.optimize import minimize
-    for col,descriptor in enumerate(descriptors):    
-        Y_mean = Y['Subject'].mean(axis=1).loc[descriptor]
-        Y_stdev = Y['Subject'].std(axis=1).loc[descriptor]
+    for col, d in enumerate(descriptors):    
         x = [1.0,1.0]
-        res = minimize(sse, x, args=(Y_mean,Y_stdev), method='L-BFGS-B')
+        res = minimize(sse, x, args=(Y_mean[d], Y_stdev[d]), method='L-BFGS-B')
         trans_params[col] = res.x # We will use these for our transformations.  
         if plot:
-            ax[col].scatter(Y_mean,Y_stdev,s=0.1)
+            ax[col].scatter(Y_mean[d], Y_stdev[d], s=0.1)
             x_ = np.linspace(0,100,100)
             #ax[col].plot(x_,f_transformation(x_, k0=res.x[0], k1=res.x[1]))
-            ax[col].set_title(descriptors[col])
+            ax[col].set_title(d)
             ax[col].set_xlim(0,100)
             ax[col].set_ylim(0,50)
             if col == 17:

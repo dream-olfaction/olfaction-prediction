@@ -2,6 +2,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from scipy.stats import pearsonr
 from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
 from sklearn.model_selection import ShuffleSplit,cross_val_score
 from sklearn.linear_model import RandomizedLasso,Ridge
@@ -10,12 +11,29 @@ from opc_python import * # Import constants.
 from opc_python.utils import scoring,prog,ProgressBar,loading,DoubleSS,DreamGroupShuffleSplit
 from opc_python.gerkin import dream
 
+DESCRIPTORS = loading.get_descriptors(format=True)
+N_DESCRIPTORS = len(DESCRIPTORS) 
+
+def rfc_maker(n_estimators=100, max_features=100,
+                  min_samples_leaf=None, max_depth=10,
+                  seed=0, et=False):
+    if not et: 
+        kls = RandomForestRegressor
+        kwargs = {'oob_score':False}
+    else:
+        kls = ExtraTreesRegressor
+        kwargs = {}
+
+    return kls(n_estimators=n_estimators, max_features=max_features,
+                min_samples_leaf=min_samples_leaf, max_depth=max_depth,
+                n_jobs=-1, random_state=seed, **kwargs)
+
 # Use random forest regression to fit the entire training data set, 
 # one descriptor set at a time.  
-def rfc_final(X,Y,Y_imp,
-              max_features,min_samples_leaf,max_depth,et,use_mask,trans_weight,
-              trans_params,X_test=None,Y_test=None,
-              n_estimators=100,seed=0,quiet=False):
+def rfc_final(X, Y, Y_imp,
+              max_features, min_samples_leaf, max_depth, et, use_mask,
+              trans_params, trans_weight=0.75, X_test=None, Y_test=None,
+              n_estimators=100, seed=0, quiet=False):
     
     if X_test is None:
         X_test = X
@@ -35,72 +53,102 @@ def rfc_final(X,Y,Y_imp,
     #         'std':Y_imp.std(axis=1,level=1)}
     #Y_mask = {'mean':Y_mask.mean(axis=1),
     #          'std':Y_mask.std(axis=1)}
-    descriptors = loading.get_descriptors(format=True)
-
-    def rfc_maker(n_estimators=n_estimators,max_features=max_features,
-                  min_samples_leaf=min_samples_leaf,max_depth=max_depth,
-                  et=False):
-        if not et: 
-            kls = RandomForestRegressor
-            kwargs = {'oob_score':False}
-        else:
-            kls = ExtraTreesRegressor
-            kwargs = {}
-
-        return kls(n_estimators=n_estimators, max_features=max_features,
-                   min_samples_leaf=min_samples_leaf, max_depth=max_depth,
-                   n_jobs=-1, random_state=seed, **kwargs)
+    
        
-    n_descriptors = len(descriptors) 
-    p = ProgressBar(n_descriptors * 2)
-    rfcs = {x:{} for x in ('mean','std')}
-    for d,descriptor in enumerate(descriptors*2):
-        kind = 'std' if d >= len(descriptors) else 'mean'
-        p.animate(d,"Fitting %s %s" % (descriptor, kind))
-        rfcs[kind][descriptor] = rfc_maker(n_estimators=n_estimators,
-                                        max_features=max_features[d],
-                                        min_samples_leaf=min_samples_leaf[d],
-                                        max_depth=max_depth[d],
-                                        et=et[d])
+    models = rfc_fit_models()
 
-        y = Y if use_mask[d] else Y_imp
-        y = y.mean(axis=1,level='Descriptor') if kind=='mean' else \
-            y.std(axis=1,level='Descriptor')
+    
+    observed = dream.filter_Y_dilutions(Y_test,'gold')
+    score = scoring.score2(predicted,observed,quiet=quiet)
+    return (rfcs,score)
+
+def rfc_fit_models(X, Y, Y_imp, hp, n_estimators=100, seed=0, std=False, 
+                   descriptors=None):
+    if not descriptors:
+        descriptors = DESCRIPTORS
+    n_descriptors = len(descriptors)
+    p = ProgressBar(n_descriptors * (1+int(std)))
+    models = {'mean':{}}
+    if std:
+        models['std'] = {}
+    for d, descriptor in enumerate(descriptors * (1+int(std))):
+        kind = 'std' if d >= N_DESCRIPTORS else 'mean'
+        p.animate(d, "Fitting %s %s" % (descriptor, kind))
+        hp_d = hp.loc[descriptor]
+        models[kind][descriptor] = rfc_maker(n_estimators=n_estimators,
+                                             max_features=hp_d['max_features'],
+                                             min_samples_leaf=hp_d['min_samples_leaf'],
+                                             max_depth=hp_d['max_depth'],
+                                             et=hp_d['use_et'],
+                                             seed=seed)
+        y = Y if hp_d['use_mask'] else Y_imp
+        y = y.mean(axis=1, level='Descriptor') if kind=='mean' else \
+            y.std(axis=1, level='Descriptor')
         y = y[descriptor]
         is_nan = np.isnan(y)
         y = y.loc[is_nan == False]
         x = X.loc[is_nan == False]
-        rfcs[kind][descriptor].fit(x,y)
-    p.animate(None,"All descriptors models fit")
+        models[kind][descriptor].fit(x,y)
+    p.animate(None, "All descriptors' models have been fit")
+    return models
+
+def rfc_get_predictions(models, X, trans_params=None, dilution='gold'):
+      
+    predicted = {key: None for key in models}
+    CIDs = X.index.get_level_values('CID').unique()
+        
+    for kind in models:
+        predicted[kind] = pd.DataFrame(index=CIDs, columns=DESCRIPTORS).astype('float')
+        for d in DESCRIPTORS:
+            if d in models[kind]:
+                X_d = dream.filter_X_dilutions(X, dilution, descriptor=d)
+                CIDs = list(X_d.index) # May be fewer for intensity than for others 
+                predicted[kind].loc[CIDs, d] = models[kind][d].predict(X_d)
     
-    columns = pd.MultiIndex.from_product([descriptors,('mean','std')],
-                                          names=['Descriptor','Moment'])
-    x_test = dream.filter_X_dilutions(X_test,'high')
-    CIDs = list(x_test.index)    
-    predicted = pd.DataFrame(index=CIDs,columns=columns)
-    for d,descriptor in enumerate(descriptors*2):
-        kind = 'std' if d >= len(descriptors) else 'mean'
-        test_conc = -3 if descriptor == 'Intensity' else 'high'
-        x_test = dream.filter_X_dilutions(X_test,test_conc)
-        CIDs = list(x_test.index) # May be fewer for intensity than for others
-        #return predicted[(descriptor,kind)],CIDs,rfcs[kind][descriptor].predict(x_test)
-        predicted[(descriptor,kind)].loc[CIDs] = \
-            rfcs[kind][descriptor].predict(x_test)
-       
-    def f_transform(x, k0, k1):
+    if 'std' in models:
+        def f_transform(x, k0, k1):
             return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
 
-    for d,descriptor in enumerate(descriptors):
-        tw = trans_weight[d]
-        k0,k1 = trans_params[d]
-        p_m = predicted[(descriptor,'mean')]
-        p_s = predicted[(descriptor,'std')]
-        predicted[(descriptor,'std')] = tw*f_transform(p_m,k0,k1) + (1-tw)*p_s
+        for d in DESCRIPTORS:
+            try: # If it is a list or array
+                tw = trans_weight[d]
+            except TypeError: # If it is just a single value
+                tw = trans_weight
+            try:
+                k0, k1 = trans_params[d]
+            except TypeError:
+                k0, k1 = trans_params
+            except:
+                tw = 0
+            if d in predicted['mean']:
+                p_m = predicted['mean'][d]
+                p_s = predicted['std'][d]
+                predicted['std'][d] = tw*f_transform(p_m,k0,k1) + (1-tw)*p_s
     
-    predicted = predicted.stack('Descriptor')
-    observed = dream.filter_Y_dilutions(Y_test,'gold')
-    score = scoring.score2(predicted,observed,quiet=quiet)
-    return (rfcs,score)
+    return predicted
+    #for kind in predicted:
+    #     = predicted.stack('Descriptor')
+
+def get_observed(Y, dilution='gold'):
+    Y = dream.filter_Y_dilutions(Y, dilution)
+    Y = Y.stack('Descriptor', dropna=False)
+    observed = {'mean': Y.mean(axis=1).unstack('Descriptor'),
+                'stdev': Y.std(axis=1).unstack('Descriptor')}
+    return observed
+
+
+def summarize_fit(predicted, observed, subject, descriptors):
+    # For each descriptor, print the Pearson correlation between 
+    # the predicted and observed ratings
+    for descriptor in descriptors:
+        try:
+            p = predicted[subject][descriptor]
+        except KeyError:
+            pass
+        else:
+            o = observed[subject][descriptor]
+            r, p = pearsonr(p, o)
+            print('R = %.3g for %s' % (r, descriptor))
 
 def rfc_(X_train,Y_train,X_test_int,X_test_other,Y_test,
          max_features=1500,n_estimators=1000,max_depth=None,min_samples_leaf=1):
