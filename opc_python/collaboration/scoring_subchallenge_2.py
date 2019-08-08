@@ -38,7 +38,7 @@ def calculate_correlations_2():
 
     others = [] 
     for desc in data1_std.columns:
-        print desc + ':' + str(stats.pearsonr(data1_mean[desc],data2_mean[desc])[0])
+        print(desc + ':' + str(stats.pearsonr(data1_mean[desc],data2_mean[desc])[0]))
         if desc not in ['INTENSITY/STRENGTH','VALENCE/PLEASANTNESS']:
             others.append(stats.pearsonr(data1_mean[desc],data2_mean[desc])[0])
             

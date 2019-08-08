@@ -4,7 +4,7 @@ import numpy as np
 from scipy.stats import pearsonr
 from . import loading
 
-from __init__ import *
+from .__init__ import *
 SIGMAS = {'int': 0.0187,
           'ple': 0.0176,
           'dec': 0.0042}

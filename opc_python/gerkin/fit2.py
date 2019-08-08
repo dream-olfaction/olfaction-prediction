@@ -95,17 +95,16 @@ def rfc_fit_models(X, Y, Y_imp, hp, n_estimators=100, seed=0, std=False,
 def rfc_get_predictions(models, X, trans_params=None, dilution='gold'):
       
     predicted = {key: None for key in models}
-    
+    CIDs = X.index.get_level_values('CID').unique()
+        
     for kind in models:
+        predicted[kind] = pd.DataFrame(index=CIDs, columns=DESCRIPTORS).astype('float')
         for d in DESCRIPTORS:
             if d in models[kind]:
                 X_d = dream.filter_X_dilutions(X, dilution, descriptor=d)
                 CIDs = list(X_d.index) # May be fewer for intensity than for others 
-                predicted[kind] = pd.DataFrame(index=CIDs, columns=DESCRIPTORS).astype('float')
                 predicted[kind].loc[CIDs, d] = models[kind][d].predict(X_d)
-        # Drop descriptors for which we have no model
-        #predicted[kind] = predicted[kind].dropna(axis=1)
-            
+    
     if 'std' in models:
         def f_transform(x, k0, k1):
             return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
