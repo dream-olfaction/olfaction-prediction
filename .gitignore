@@ -1,5 +1,9 @@
-linear_scores_and_features
+linear_scores_and_features*
+*.png
+*.ai
 *.ipynb_checkpoints*
+*.docx
+*.pdf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

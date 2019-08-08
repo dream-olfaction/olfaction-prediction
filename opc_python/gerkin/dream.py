@@ -4,9 +4,10 @@ import numpy as np
 import pandas as pd
 import types
 from collections import OrderedDict
-from sklearn.preprocessing import Imputer,MinMaxScaler
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler
 
-from opc_python import * # Import constants.  
+from opc_python import * # Import constants.
 from opc_python.utils import loading, scoring, ProgressBar
 DATA = '../../data/'
 
@@ -24,18 +25,19 @@ def filter_Y_dilutions(df, concentration, keep_replicates=False):
         return df
     assert concentration in ['high','low','gold','all'] or type(concentration) is int
     try:
-        df = df.stack('Descriptor')
+        df = df.stack('Descriptor', dropna=False)
         unstack = True
     except KeyError:
         unstack = False
         pass
+    
     if keep_replicates:
         order = ['Descriptor','CID','Replicate']
     else:
         order = ['Descriptor','CID']
     df = df.sort_index(level=order+['Dilution'])
     if not keep_replicates:
-        df = df.groupby(level=order+['Dilution']).mean() 
+        df = df.groupby(level=order+['Dilution']).mean()
     df = df.fillna(999) # Pandas doesn't select correctly on NaNs
     if concentration == 'low':
         df = df.groupby(level=order).first()
@@ -52,7 +54,7 @@ def filter_Y_dilutions(df, concentration, keep_replicates=False):
     else:
         df = df.loc[[x for x in df.index if x[2]==concentration]]
         df = df.groupby(level=order).first()
-    df = df.replace(999,float('NaN')) # Undo the fillna line above. 
+    df = df.replace(999,float('NaN')) # Undo the fillna line above.
     # Get descriptors back in paper order
     descriptors = loading.get_descriptors(format=True)
     try:
@@ -62,9 +64,9 @@ def filter_Y_dilutions(df, concentration, keep_replicates=False):
         descriptors.remove('Intensity')
     df = df.T[descriptors].T
     try:
-        df['Subject'] = df['Subject'].astype(float) 
+        df['Subject'] = df['Subject'].astype(float)
     except KeyError:
-        df = df.astype(float) 
+        df = df.astype(float)
     try:
         if unstack:
             df = df.unstack('Descriptor')
@@ -75,15 +77,18 @@ def filter_Y_dilutions(df, concentration, keep_replicates=False):
 
 def impute(df,kind):
     if kind == 'median':
-        imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
-        df[:] = imputer.fit_transform(df.as_matrix())
+        imputer = SimpleImputer(missing_values=np.nan, strategy='median')
+        df[:] = imputer.fit_transform(df.values)
     return df
 
 
 def make_Y(df, concentration='all', imputer=None, keep_replicates=False):
     # df comes from loading.load_perceptual_data
     df = filter_Y_dilutions(df, concentration, keep_replicates=False)
-    df = df['Subject'].unstack('Descriptor')
+    # Some CID/dilution combinations may not have data
+    df = df.unstack('Descriptor')
+    indices_with_values = df.mean(axis=1).dropna().index
+    df = df.loc[indices_with_values]
     if imputer:
         df = impute(df,imputer)
     return df
@@ -93,33 +98,40 @@ def make_Y(df, concentration='all', imputer=None, keep_replicates=False):
 # Molecular processing (X) #
 ############################
 
-def filter_X_dilutions(df, concentration):
-    """Select only one dilution ('high', 'low', or some number)."""
-    assert concentration in ['high','low'] or type(concentration) is int
-    df = df.sort_index(level=['CID','Dilution']) 
+def filter_X_dilutions(df, concentration, descriptor='Intensity'):
+    """Select only one dilution ('high', 'low', 'gold', or some number)."""
+    assert concentration in ['high', 'low', 'gold'] or type(concentration) is int
+    df = df.sort_index(level=['CID','Dilution'])
     df = df.fillna(999) # Pandas doesn't select correctly on NaNs
     if concentration == 'low':
         df = df.groupby(level=['CID']).first()
     elif concentration == 'high':
         df = df.groupby(level=['CID']).last()
+    elif concentration == 'gold':
+        if descriptor == 'Intensity':
+            df = filter_X_dilutions(df, -3)
+        else:
+            df = filter_X_dilutions(df, 'high')
     else:
         df = df.loc[[x for x in df.index if x[1]==concentration]]
         df = df.groupby(level=['CID']).first()
         #df = df.groupby(level=['CID']).last()
-    df = df.replace(999,float('NaN')) # Undo the fillna line above. 
+    df = df.replace(999,float('NaN')) # Undo the fillna line above.
     return df
 
-def make_X(df,CID_dilutions,target_dilution=None,threshold=None,bad=None,
-           good1=None,good2=None,means=None,stds=None,raw=False,quiet=False):
+def make_X(molecular_data, CID_dilutions, target_dilution=None, threshold=None, bad=None,
+           good1=None, good2=None, means=None, stds=None, raw=False, quiet=False):
     # df produced from e.g. loading.get_molecular_data()
     if threshold is None:
         threshold = NAN_PURGE_THRESHOLD
+
+    # Use the CID as the index for joining
+    CID_dilutions = CID_dilutions.set_index('CID')
+    # Join, keeping only those CIDs found in all_CID_dilutions
+    X = molecular_data.join(CID_dilutions, how='right')
+    # Add dilution to the index, but keep it as a predictor
+    X = X.set_index('Dilution', append=True, drop=False)
     
-    data = [list(df.loc[CID])+[dilution,i] \
-            for i,(CID,dilution) in enumerate(CID_dilutions)]
-    X = pd.DataFrame(data=data,index=pd.MultiIndex.from_tuples(CID_dilutions,
-                                     names=['CID','Dilution']),
-                     columns=list(df.columns)+['dilution','mean_dilution'])
     if not raw:
         if bad:
             X = X.drop(bad)
@@ -130,7 +142,7 @@ def make_X(df,CID_dilutions,target_dilution=None,threshold=None,bad=None,
         X,imputer = impute_X(X)
         #print("Purging data that is still bad, if any...")
         X,good2 = purge2_X(X,good_molecular_descriptors=good2)
-        
+
         #print("Normalizing data for fitting...")
         X,means,stds = normalize_X(X,means=means,stds=stds)
     else:
@@ -142,13 +154,20 @@ def make_X(df,CID_dilutions,target_dilution=None,threshold=None,bad=None,
     if not quiet:
         print("The X matrix now has shape (%dx%d) molecules by " % X.shape +\
           "non-NaN good molecular descriptors")
-    return X,good1,good2,means,stds,imputer
+        feature_origins = [f[0] for f in X.columns if isinstance(f, tuple)]
+        feature_counts = pd.Series(feature_origins).value_counts()
+        for feature, count in feature_counts.iteritems():
+            print("%d descriptors come from %s." % (count, feature))
+    
+    metadata = {'good1': good1, 'good2': good2, 'means': means, 
+                'stds': stds, 'imputer': imputer}
+    return X, metadata
 
 def get_molecular_vectors(molecular_data,CID_dilutions):
     CIDs = []
     for CID_dilution in CID_dilutions:
         CID,dilution,high = CID_dilution.split('_')
-        CIDs.append(int(CID)) 
+        CIDs.append(int(CID))
     molecular_vectors = {}
     for row in molecular_data:
         CID = int(row[0])
@@ -165,9 +184,9 @@ def add_dilutions(molecular_data,CID_dilutions,dilution=None):
             CID,dilution,high = [float(_) for _ in CID_dilution.split('_')]
             CID = int(CID); high = int(high)
             if high==1:
-                mean_dilution = dilution - 1 # e.g. -3 was high so other was -5 so mean is -4.  
+                mean_dilution = dilution - 1 # e.g. -3 was high so other was -5 so mean is -4.
             elif high==0:
-                mean_dilution = dilution + 1 # e.g. -3 was low so other was -1 so mean is -2. 
+                mean_dilution = dilution + 1 # e.g. -3 was low so other was -1 so mean is -2.
             else:
                 raise ValueError("High not 0 or 1")
             molecular_vectors_[CID_dilution] = np.concatenate((molecular_vectors[CID],[dilution,mean_dilution]))
@@ -180,8 +199,8 @@ def add_dilutions(molecular_data,CID_dilutions,dilution=None):
 def purge1_X(X,threshold=0.25,good_molecular_descriptors=None):
     threshold = X.shape[0]*threshold
     if good_molecular_descriptors is None:
-        # Which columns of X (which molecular descriptors) have NaNs for at 
-        # least 'threshold' fraction of the molecules?  
+        # Which columns of X (which molecular descriptors) have NaNs for at
+        # least 'threshold' fraction of the molecules?
         valid = np.isnan(X).sum()<threshold # True/False
         valid = valid[valid] # Only the 'Trues'
         good_molecular_descriptors = list(valid.index)
@@ -191,19 +210,19 @@ def purge1_X(X,threshold=0.25,good_molecular_descriptors=None):
 
 def impute_X(X):
     # The X_obs matrix (molecular descriptors) still has NaN values that
-    # need to be imputed.  
-    imputer = Imputer(missing_values=np.nan,strategy='median',axis=0)
-    X[:] = imputer.fit_transform(X.as_matrix())
+    # need to be imputed.
+    imputer = SimpleImputer(missing_values=np.nan, strategy='median')
+    X[:] = imputer.fit_transform(X.values)
     #print("The X matrix now has shape (%dx%d) (molecules by non-NaN good molecular descriptors)" % X.shape)
     return X,imputer
 
 def purge2_X(X,good_molecular_descriptors=None):
     if good_molecular_descriptors is None:
-        zeros = np.abs(np.sum(X,axis=0))==0 # All zeroes.  
-        invariants = np.std(X,axis=0)==0 # Same value for all molecules.  
+        zeros = np.abs(np.sum(X,axis=0))==0 # All zeroes.
+        invariants = np.std(X,axis=0)==0 # Same value for all molecules.
         valid = ~zeros & ~invariants
         valid = valid[valid]
-        # Purge these bad descriptors from the X matrix.  
+        # Purge these bad descriptors from the X matrix.
         good_molecular_descriptors = list(valid.index)
     X = X.loc[:,good_molecular_descriptors]
     #print("The X matrix has shape (%dx%d) (molecules by good molecular descriptors)" % X.shape)
@@ -226,14 +245,14 @@ def normalize_X(X,means=None,stds=None):#,logs=None):
     return X,means,stds
 
 def quad_prep(features,CID_dilutions,dilution=None):
-    """Given molecular data, return an array scaled between 0-1, 
-    along with the squared versions of the same variables.  
+    """Given molecular data, return an array scaled between 0-1,
+    along with the squared versions of the same variables.
     Put concentration information at the end of the array without
-    squaring it.   
+    squaring it.
     """
     X = make_X(features,CID_dilutions,target_dilution=dilution,
                               raw=True,quiet=True)[0]
-    X = X.fillna(0) 
+    X = X.fillna(0)
     X1 = X.copy()
     X1[:] = MinMaxScaler().fit_transform(X)
     X1.drop(['dilution','mean_dilution'],1,inplace=True)
@@ -242,7 +261,7 @@ def quad_prep(features,CID_dilutions,dilution=None):
     result = pd.concat((X1,X2,X[['dilution','mean_dilution']]),1)
     print("The X matrix now has shape (%dx%d) molecules by " \
             % result.shape + "non-NaN good molecular descriptors")
-    
+
     return result
 
 ##############################
@@ -263,14 +282,14 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
     X_other = filter_X_dilutions(X,'high')
     if Y_test is not None:
         Y_test = filter_Y_dilutions(Y_test,'gold')
-    
+
     n_obs = X_other.shape[0]
     descriptors = loading.get_descriptors(format=True)
     n_descriptors = len(descriptors)
     n_subjects = 49
     kinds = ['int','ple','dec']
-    moments = ['mean','std']   
-    
+    moments = ['mean','std']
+
     p = ProgressBar(n_descriptors)
     if subchallenge == 1:
         Y = pd.Panel(items=range(1,n_subjects+1),major_axis=X_other.index,
@@ -286,7 +305,7 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
                 Y[subject][descriptor].loc[mol] = \
                     rfcs[subject][descriptor].predict(X)
         p.animate(None,"Predictions computed")
-        
+
         # Regularize
         Y_mean = Y.mean(axis=0)
         for subject in range(1,n_subjects+1):
@@ -297,11 +316,11 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
             predicted = Y.to_frame().unstack('Descriptor')
             observed = Y_test
             scoring.score(predicted,observed)
-            
+
     if subchallenge == 2:
         def f_transform(x, k0, k1):
             return 100*(k0*(x/100)**(k1*0.5) - k0*(x/100)**(k1*2))
-        
+
         Y = pd.Panel(items=moments,major_axis=X_other.index,
                      minor_axis=pd.Series(descriptors,name='Descriptor'))
 
@@ -315,20 +334,20 @@ def make_prediction_files(rfcs,X,target,subchallenge,Y_test=None,
             for moment in moments:
                 Y[moment][descriptor].loc[mol] = \
                     rfcs[moment][descriptor].predict(X)
-        p.animate(None,"Predictions computed")        
-        
+        p.animate(None,"Predictions computed")
+
         for col,descriptor in enumerate(descriptors):
             tw = trans_weight[col]
             k0,k1 = trans_params[col]
             y_m = Y['mean'][descriptor]
             y_s = Y['std'][descriptor]
             Y['std'][descriptor] = tw*f_transform(y_m,k0,k1) + (1-tw)*y_s
-        
+
         if Y_test is not None:
             predicted = Y.to_frame().unstack('Descriptor')
             observed = Y_test
             scoring.score2(predicted,observed)
-            
+
     if write:
         loading.write_prediction_files(Y,target,subchallenge,name)
         print('Wrote to file with suffix "%s"' % name)
