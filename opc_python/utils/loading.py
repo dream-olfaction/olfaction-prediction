@@ -589,4 +589,5 @@ def cache_cid_dilutions():
                  'training-norep', 'replicated']:
         CID_dilutions = get_CID_dilutions(kind, cached=False)
         path = os.path.join(DATA_PATH, 'derived', '%s.csv' % kind)
+        CID_dilutions = CID_dilutions.to_frame(index=False)
         CID_dilutions.to_csv(path, header=True, index=False)
