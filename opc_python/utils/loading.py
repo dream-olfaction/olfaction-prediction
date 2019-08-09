@@ -366,8 +366,7 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
         file_path = os.path.join(DATA_PATH, 'derived', '%s.csv' % kind)
         if not os.path.isfile(file_path):
             print(("Determining CIDs and dilutions the long way one time. "
-                   "Results will be stored for faster retrieval in the future")
-                  % kind)
+                   "Results will be stored for faster retrieval in the future"))
             cache_cid_dilutions()
         data = pd.read_csv(file_path)
     else:  # Note this may not include some of the testset dilutions
