@@ -41,3 +41,8 @@ Files using other languages by other challenge participants are in subdirectorie
 * `opc_R` (An R package for loading the data, generating models, and writing prediction files).  
 
 ### Scripts used by the organizers to score original challenge submissions are [here](https://github.com/Sage-Bionetworks/OlfactionDREAMChallenge/tree/90adc4695cae6adb0e40222d21e2619b5b776ea0/src/main/resources).
+<hr>
+
+## Quick Start:
+
+There is a [Quick Start](https://github.com/dream-olfaction/olfaction-prediction/blob/thin/opc_python/paper/quick-start.ipynb) file that you can use to quickly train the DREAM model, evaluate it, and start making predictions if you have molecules with calculated features.  The most reliable way to run it is using the Docker, with the instructions [here](https://github.com/dream-olfaction/olfaction-prediction/blob/thin/docker/README.md).
