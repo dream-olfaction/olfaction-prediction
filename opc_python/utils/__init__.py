@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
 
 utils_path = os.path.dirname(os.path.abspath(__file__))
-opc_python_path  = os.path.dirname(utils_path)
+opc_python_path = os.path.dirname(utils_path)
 root_path = os.path.dirname(opc_python_path)
 if root_path not in sys.path:
     sys.path.append(root_path)
@@ -91,31 +91,32 @@ codes = ['Intensity',
 letters = [[x for x in code if (x.upper() == x and x!='/') ][0] for code in codes]
 
 class DreamGroupShuffleSplit(GroupShuffleSplit):
-    def split(self,X,CIDs,desc):
+    def split(self, X, CIDs, desc):
         # CIDs should be a list or index of CIDs with a length equal to the
-        # number of entries in the index of X.  
-        
-        def f(train,test):
+        # number of entries in the index of X.
+
+        def f(train, test):
             train = X.index[list(train)]
             test = X.index[list(test)]
             X_test = X.loc[test]
             if desc == 'Intensity':
-                test = [z for z in test if z[1]==-3] # If concentration is 10^-3
+                # If concentration is 10^-3
+                test = [z for z in test if z[1] == -3]
             else:
-                test = X_test.groupby(level=['CID','Dilution']).last().index
-            return train,test
-        
-        gss = super(DreamGroupShuffleSplit,self).split(X,groups=CIDs)
-        return starmap(f,gss)  
+                test = X_test.groupby(level=['CID', 'Dilution']).last().index
+            return train, test
+
+        gss = super(DreamGroupShuffleSplit, self).split(X, groups=CIDs)
+        return starmap(f, gss)
 
 
 class DoubleSS:
     """
-    This class produces a new iterator that makes sure that the training and 
-    test set do not contains the same molecule at different dilutions, 
-    and also that the higher concentration is tested (or 10^-3 for intensity). 
-    
-    Deprecated in favor of DreamGroupShuffleSplit which works in one step. 
+    This class produces a new iterator that makes sure that the training and
+    test set do not contains the same molecule at different dilutions,
+    and also that the higher concentration is tested (or 10^-3 for intensity).
+
+    Deprecated in favor of DreamGroupShuffleSplit which works in one step.
     """
     def __init__(self, ss, n_obs, col, concs):
         self.splits = ss
@@ -125,13 +126,14 @@ class DoubleSS:
 
     def __iter__(self):
         for train, test in self.splits.split(range(self.n_obs)):
-            train = np.concatenate((2*train,2*train+1))
-            if self.col>0:
-                test = 2*test+1 # The second (higher) concentration of the pair
+            train = np.concatenate((2*train, 2*train+1))
+            if self.col > 0:
+                # The second (higher) concentration of the pair
+                test = 2*test + 1
             else:
-                test = np.concatenate((2*test,2*test+1))
-                test = test[self.concs[test]==-3]
+                test = np.concatenate((2*test, 2*test+1))
+                test = test[self.concs[test] == -3]
             yield train, test
-            
+
     def __len__(self):
         return len(self.splits)

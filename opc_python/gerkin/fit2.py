@@ -3,21 +3,28 @@ import warnings
 import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
-from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor
-from sklearn.model_selection import ShuffleSplit,cross_val_score
-from sklearn.linear_model import RandomizedLasso,Ridge
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
+from sklearn.model_selection import ShuffleSplit, cross_val_score
+try:
+    from sklearn.linear_model import RandomizedLasso
+except:
+    def RandomizeLasso():
+        raise Exception(("RandomizedLasso could not be imported because "
+                         "it was removed from scikit-learn"))
+from sklearn.linear_model import Ridge
 
-from opc_python import * # Import constants.  
-from opc_python.utils import scoring,prog,ProgressBar,loading,DoubleSS,DreamGroupShuffleSplit
+from opc_python import * # Import constants.
+from opc_python.utils import scoring, prog, ProgressBar
+from opc_python.utils import loading, DoubleSS, DreamGroupShuffleSplit
 from opc_python.gerkin import dream
 
 DESCRIPTORS = loading.get_descriptors(format=True)
 N_DESCRIPTORS = len(DESCRIPTORS) 
 
 def rfc_maker(n_estimators=100, max_features=100,
-                  min_samples_leaf=None, max_depth=10,
-                  seed=0, et=False):
-    if not et: 
+              min_samples_leaf=None, max_depth=10,
+              seed=0, et=False):
+    if not et:
         kls = RandomForestRegressor
         kwargs = {'oob_score':False}
     else:
@@ -25,16 +32,16 @@ def rfc_maker(n_estimators=100, max_features=100,
         kwargs = {}
 
     return kls(n_estimators=n_estimators, max_features=max_features,
-                min_samples_leaf=min_samples_leaf, max_depth=max_depth,
-                n_jobs=-1, random_state=seed, **kwargs)
+               min_samples_leaf=min_samples_leaf, max_depth=max_depth,
+               n_jobs=-1, random_state=seed, **kwargs)
 
-# Use random forest regression to fit the entire training data set, 
-# one descriptor set at a time.  
+# Use random forest regression to fit the entire training data set,
+# one descriptor set at a time.
 def rfc_final(X, Y, Y_imp,
               max_features, min_samples_leaf, max_depth, et, use_mask,
               trans_params, trans_weight=0.75, X_test=None, Y_test=None,
               n_estimators=100, seed=0, quiet=False):
-    
+
     if X_test is None:
         X_test = X
     if Y_test is None:
@@ -58,17 +65,17 @@ def rfc_final(X, Y, Y_imp,
     models = rfc_fit_models()
 
     
-    observed = dream.filter_Y_dilutions(Y_test,'gold')
-    score = scoring.score2(predicted,observed,quiet=quiet)
+    observed = dream.filter_Y_dilutions(Y_test, 'gold')
+    score = scoring.score2(predicted, observed, quiet=quiet)
     return (rfcs,score)
 
-def rfc_fit_models(X, Y, Y_imp, hp, n_estimators=100, seed=0, std=False, 
+def rfc_fit_models(X, Y, Y_imp, hp, n_estimators=100, seed=0, std=False,
                    descriptors=None):
     if not descriptors:
         descriptors = DESCRIPTORS
     n_descriptors = len(descriptors)
     p = ProgressBar(n_descriptors * (1+int(std)))
-    models = {'mean':{}}
+    models = {'mean': {}}
     if std:
         models['std'] = {}
     for d, descriptor in enumerate(descriptors * (1+int(std))):
@@ -172,26 +179,26 @@ def rfc_(X_train,Y_train,X_test_int,X_test_other,Y_test,
         else:
             predicted = rfc.predict(X[1])
             predicted_int = rfc.predict(X[0])
-            predicted[:,0] = predicted_int[:,0]
-            predicted[:,21] = predicted_int[:,21]
+            predicted[:, 0] = predicted_int[:, 0]
+            predicted[:, 21] = predicted_int[:, 21]
         observed = Y
         score = scoring.score2(predicted,observed)
-        r_int = scoring.r2('int','mean',predicted,observed)
-        r_ple = scoring.r2('ple','mean',predicted,observed)
-        r_dec = scoring.r2('dec','mean',predicted,observed)
-        r_int_sig = scoring.r2('int','std',predicted,observed)
-        r_ple_sig = scoring.r2('ple','std',predicted,observed)
-        r_dec_sig = scoring.r2('dec','std',predicted,observed)
+        r_int = scoring.r2('int', 'mean', predicted, observed)
+        r_ple = scoring.r2('ple', 'mean', predicted, observed)
+        r_dec = scoring.r2('dec', 'mean', predicted, observed)
+        r_int_sig = scoring.r2('int', 'std' ,predicted, observed)
+        r_ple_sig = scoring.r2('ple', 'std', predicted, observed)
+        r_dec_sig = scoring.r2('dec', 'std', predicted, observed)
         print(("For subchallenge 2, %s phase, "
                "score = %.2f (%.2f,%.2f,%.2f,%.2f,%.2f,%.2f)"
-               % (phase,score,r_int,r_ple,r_dec,r_int_sig,r_ple_sig,r_dec_sig)))
-        scores[phase] = (score,r_int,r_ple,r_dec,r_int_sig,r_ple_sig,r_dec_sig)
+               % (phase, score, r_int, r_ple, r_dec, r_int_sig, r_ple_sig, r_dec_sig)))
+        scores[phase] = (score, r_int, r_ple, r_dec, r_int_sig, r_ple_sig, r_dec_sig)
 
-    return rfc,scores['train'],scores['test']
+    return rfc, scores['train'], scores['test']
 
-# Show that random forest regression also works really well out of sample.  
-def rfc_cv(X,Y_imp,Y_mask,Y_test=None,n_splits=10,n_estimators=100,
-           max_features=1500,min_samples_leaf=1,max_depth=None,rfc=True):
+# Show that random forest regression also works really well out of sample.
+def rfc_cv(X, Y_imp, Y_mask, Y_test=None, n_splits=10, n_estimators=100,
+           max_features=1500, min_samples_leaf=1, max_depth=None, rfc=True):
     if Y_mask is None:
         use_Y_mask = False
         Y_mask = Y_imp
@@ -201,15 +208,19 @@ def rfc_cv(X,Y_imp,Y_mask,Y_test=None,n_splits=10,n_estimators=100,
         Y_test = Y_mask
     if rfc:
         rfc_imp = RandomForestRegressor(max_features=max_features,
-                                n_estimators=n_estimators,
-                                max_depth=max_depth,
-                                min_samples_leaf=min_samples_leaf,
-                                oob_score=False,n_jobs=-1,random_state=0)
+                                        n_estimators=n_estimators,
+                                        max_depth=max_depth,
+                                        min_samples_leaf=min_samples_leaf,
+                                        oob_score=False,
+                                        n_jobs=-1,
+                                        random_state=0)
         rfc_mask = RandomForestRegressor(max_features=max_features,
-                                n_estimators=n_estimators,
-                                max_depth=max_depth,
-                                min_samples_leaf=min_samples_leaf,
-                                oob_score=False,n_jobs=-1,random_state=0)
+                                         n_estimators=n_estimators,
+                                         max_depth=max_depth,
+                                         min_samples_leaf=min_samples_leaf,
+                                         oob_score=False,
+                                         n_jobs=-1,
+                                         random_state=0)
     else:
         rfc_imp = ExtraTreesRegressor(max_features=max_features,
                                 n_estimators=n_estimators,

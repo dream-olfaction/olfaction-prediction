@@ -126,30 +126,30 @@ def make_X(molecular_data, CID_dilutions, target_dilution=None, threshold=None, 
         threshold = NAN_PURGE_THRESHOLD
 
     # Use the CID as the index for joining
-    CID_dilutions = CID_dilutions.set_index('CID')
+    CIDs = CID_dilutions.to_frame(index=False).set_index('CID')
     # Join, keeping only those CIDs found in all_CID_dilutions
-    X = molecular_data.join(CID_dilutions, how='right')
+    X = molecular_data.join(CIDs, how='right')
     # Add dilution to the index, but keep it as a predictor
     X = X.set_index('Dilution', append=True, drop=False)
     
     if not raw:
         if bad:
             X = X.drop(bad)
-        #print("Purging data with too many NaNs...")
-        X,good1 = purge1_X(X,threshold=NAN_PURGE_THRESHOLD,
-                           good_molecular_descriptors=good1)
-        #print("Imputing remaining NaN data...")
-        X,imputer = impute_X(X)
-        #print("Purging data that is still bad, if any...")
-        X,good2 = purge2_X(X,good_molecular_descriptors=good2)
+        # print("Purging data with too many NaNs...")
+        X, good1 = purge1_X(X, threshold=NAN_PURGE_THRESHOLD,
+                            good_molecular_descriptors=good1)
+        # print("Imputing remaining NaN data...")
+        X, imputer = impute_X(X)
+        # print("Purging data that is still bad, if any...")
+        X, good2 = purge2_X(X, good_molecular_descriptors=good2)
 
-        #print("Normalizing data for fitting...")
-        X,means,stds = normalize_X(X,means=means,stds=stds)
+        # print("Normalizing data for fitting...")
+        X, means,stds = normalize_X(X, means=means, stds=stds)
     else:
-        good1,good2 = X.columns,X.columns
-        means,stds,imputer = None,None,None
+        good1,good2 = X.columns, X.columns
+        means,stds,imputer = None, None, None
     if target_dilution is not None:
-        X = filter_X_dilutions(X,target_dilution)
+        X = filter_X_dilutions(X, target_dilution)
 
     if not quiet:
         print("The X matrix now has shape (%dx%d) molecules by " % X.shape +\

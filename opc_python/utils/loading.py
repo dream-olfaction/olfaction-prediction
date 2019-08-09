@@ -74,7 +74,7 @@ def format_bmc_data(df,  # The raw data frame returned by `load_raw_bmc_data`
     df = df[['CID', 'Dilution', 'Subject'] + descriptors]
 
     # Fill NaN descriptors values with 0 if Intensity is not 0.  
-    df = df.apply(lambda x:x.fillna(0) if x['Intensity'] > 0 else x, axis=1)
+    df = df.apply(lambda x: x.fillna(0) if x['Intensity'] > 0 else x, axis=1)
 
     # Make dilution values integer -log10 dilutions
     df['Dilution'] = df['Dilution'].apply(dilution2magnitude).astype(float)
@@ -344,38 +344,45 @@ def get_molecular_data(sources,CIDs):
 
 def get_CID_dilutions(kind, target_dilution=None, cached=True):
     if type(kind) is list:
-        data = pd.DataFrame(columns=['CID', 'Dilution'])
+        data = []
         for k in kind:
             d = get_CID_dilutions(k, target_dilution=target_dilution,
                                      cached=cached)
-            data = data.append(d) 
-        data = data.sort_values(['CID', 'Dilution']).reset_index(drop=True)
+            data.append(d)
+        if len(data) == 1:
+            data = data[0]
+        else:
+            data = pd.MultiIndex.append(*data)
+        data = data.sort_values()
         return data
-    assert kind in ['training','training-norep','replicated',
-                    'leaderboard','testset']
+    assert kind in ['training', 'training-norep', 'replicated',
+                    'leaderboard', 'testset']
     """Return CIDs for molecules that will be used for:
         'leaderboard': the leaderboard to determine the provisional
                        leaders of the competition.
         'testset': final testing to determine the winners
                    of the competition."""
     if cached:
-        file_path = os.path.join(DATA_PATH, '%s.csv' % kind)
+        file_path = os.path.join(DATA_PATH, 'derived', '%s.csv' % kind)
         if not os.path.isfile(file_path):
-            print(("Determining CIDs and dilutions the long way one time."
-                   "Results will be stored for faster retrieval in the future"))
+            print(("Determining CIDs and dilutions the long way one time. "
+                   "Results will be stored for faster retrieval in the future")
+                  % kind)
             cache_cid_dilutions()
         data = pd.read_csv(file_path)
     else:  # Note this may not include some of the testset dilutions
         if kind in ['training', 'replicated', 'leaderboard', 'testset']:
             data = []
             perceptual_data = load_perceptual_data(kind)
-            for i,row in perceptual_data.iterrows():
+            for i, row in perceptual_data.iterrows():
                 replicate = row.name[3]
                 if replicate or kind != 'replicated':
                     CID = row.name[1]
                     dilution = row.name[2]
-                    dilutions = perceptual_data.loc['Intensity'].loc[CID]\
-                                               .index.get_level_values('Dilution')
+                    dilutions = perceptual_data.loc['Intensity']\
+                                               .loc[CID]\
+                                               .index\
+                                               .get_level_values('Dilution')
                     high = dilution == dilutions.max()
                     if target_dilution == 'high' and not high:
                         continue
@@ -400,14 +407,15 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
         data = pd.DataFrame(data, columns=['CID', 'Dilution'])
     data['CID'] = data['CID'].astype(int)
     data['Dilution'] = data['Dilution'].astype(float)
+    data = pd.MultiIndex.from_frame(data).sort_values()
     return data
 
 
 def get_CIDs(kind, target_dilution=None, cached=True):
-    CID_dilutions = get_CID_dilutions(kind, 
+    CID_dilutions = get_CID_dilutions(kind,
                                       target_dilution=target_dilution,
                                       cached=cached)
-    CIDs = CID_dilutions['CID'].sort_values().unique()
+    CIDs = CID_dilutions.get_level_values('CID').sort_values().unique()
     return CIDs
 
 
@@ -421,7 +429,7 @@ def get_CID_rank(kind, dilution=-3):
     result = {}
     for CID in CIDs:
         high = '%d_%g_%d' % (CID, dilution, 1)
-        low = '%d_%g_%d' % (CID,dilution, 0)
+        low = '%d_%g_%d' % (CID, dilution, 0)
         if high in CID_dilutions:
             result[CID] = 1
         elif low in CID_dilutions:
@@ -484,11 +492,12 @@ def load_data_matrix(kind='training', gold_standard_only=False,
 
 # Write predictions for each subchallenge to a file.
 
+
 def open_prediction_file(subchallenge, kind, name):
     prediction_file_path = os.path.join(PREDICTION_PATH,
                                         'challenge_%d_%s_%s.txt'
-                                        % (subchallenge,kind,name))
-    f = open(prediction_file_path,'w')
+                                        % (subchallenge, kind, name))
+    f = open(prediction_file_path, 'w')
     writer = csv.writer(f, delimiter='\t')
     return f, writer
 
@@ -565,7 +574,7 @@ def pool_CID_dilutions(CID_dilution_list):
     return CID_dilutions
 
 
-def cache_cid_dilutions():
+def load_bmc_perceptual_data():
     print("Loading perceptual data")
     raw_perceptual_data = load_raw_bmc_data()
     print("Fomatting perceptual data")
@@ -573,9 +582,12 @@ def cache_cid_dilutions():
                                       only_dream_subjects=True, # Whether to only keep DREAM subjects
                                       only_dream_descriptors=True, # Whether to only keep DREAM descriptors
                                       only_dream_molecules=True) # Whether to only keep DREAM molecules)
+    return perceptual_data
+
+
+def cache_cid_dilutions():
     for kind in ['training', 'leaderboard', 'testset',
                  'training-norep', 'replicated']:
-        CIDs = get_CIDs(kind)
-        path = os.path.join(OP_PATH, 'data', '%s.csv' % kind)
-        CID_dilutions = all_CID_dilutions[all_CID_dilutions['CID'].isin(CIDs)]
+        CID_dilutions = get_CID_dilutions(kind, cached=False)
+        path = os.path.join(DATA_PATH, 'derived', '%s.csv' % kind)
         CID_dilutions.to_csv(path, header=True, index=False)
