@@ -366,7 +366,7 @@ def get_CID_dilutions(kind, target_dilution=None, cached=True):
         file_path = os.path.join(DATA_PATH, 'derived', '%s.csv' % kind)
         if not os.path.isfile(file_path):
             print(("Determining CIDs and dilutions the long way one time. "
-                   "Results will be stored for faster retrieval in the future"))
+                   "Results will be stored for faster retrieval in the future."))
             cache_cid_dilutions()
         data = pd.read_csv(file_path)
     else:  # Note this may not include some of the testset dilutions
@@ -589,7 +589,7 @@ def cache_cid_dilutions():
                  'training-norep', 'replicated']:
         CID_dilutions = get_CID_dilutions(kind, cached=False)
         derived = os.path.join(DATA_PATH, 'derived')
-        os.mkdir(derived)
+        os.mkdirs(derived, exist_ok=True)
         path = os.path.join(derived, '%s.csv' % kind)
         CID_dilutions = CID_dilutions.to_frame(index=False)
         CID_dilutions.to_csv(path, header=True, index=False)
